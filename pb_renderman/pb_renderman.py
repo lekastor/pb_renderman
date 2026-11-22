@@ -1700,9 +1700,9 @@ and assign it to the selected objects / faces.</li>
 <tr><td><b>Database value if meaningful</b></td><td>Use the physicallybased.info roughness when it is
 not 0 or 0.5 (generic placeholders), e.g. brick 1.0, paper 0.8, pearl 0.35.
 Otherwise the value on the left is used (glass: 0.001).</td></tr>
-<tr><td><b>SSS scale</b></td><td>Multiplier on the database subsurface radius (mm) -&gt; subsurfaceDmfp
+<tr><td><b>SSS scale (mm)</b></td><td>Multiplier on the database subsurface radius (mm) -&gt; subsurfaceDmfp
 (default %(sss)g).</td></tr>
-<tr><td><b>Extinction scale</b></td><td>Multiplier on the interior extinction of transmissive materials.
+<tr><td><b>Extinction scale (cm)</b></td><td>Multiplier on the interior extinction of transmissive materials.
 Database coefficients are per cm: 1 for a scene in cm, 100 in meters.
 Raise it to exaggerate the tint on small objects.</td></tr>
 <tr><td><b>Non-directional (faster SSS / Glass Single Scatter)</b></td><td>Replace directional (forward)
@@ -1999,7 +1999,7 @@ if QtWidgets is not None:
             self.sss.setValue(DEFAULT_SSS_SCALE)
             self.sss.setToolTip("Multiplier on the database subsurface radius (mm) -> subsurfaceDmfp (default 10)")
             self.sss.valueChanged.connect(lambda *_: self._on_select(self.list.currentItem()))
-            form.addRow(_ResetLabel("SSS scale:", lambda: self.sss.setValue(DEFAULT_SSS_SCALE),
+            form.addRow(_ResetLabel("SSS scale (mm):", lambda: self.sss.setValue(DEFAULT_SSS_SCALE),
                                     [self.sss], "%g" % DEFAULT_SSS_SCALE), self.sss)
             self.ext = QtWidgets.QDoubleSpinBox()
             self.ext.setDecimals(3)
@@ -2009,7 +2009,7 @@ if QtWidgets is not None:
                                 "Database coefficients are per cm: 1 for a scene in cm, 100 in meters.\n"
                                 "Raise it to exaggerate the tint on small objects.")
             self.ext.valueChanged.connect(lambda *_: self._on_select(self.list.currentItem()))
-            form.addRow(_ResetLabel("Extinction scale:", lambda: self.ext.setValue(1.0), [self.ext], "1"), self.ext)
+            form.addRow(_ResetLabel("Extinction scale (cm):", lambda: self.ext.setValue(1.0), [self.ext], "1"), self.ext)
             self.reduce = QtWidgets.QCheckBox("Non-directional (faster SSS / Glass Single Scatter)")
             self.reduce.setToolTip("Replace directional (forward) scattering by isotropic scattering.\n"
                                    "Similar look, much faster. Applies to the database and to MyLibrary\n"

@@ -81,8 +81,8 @@ What was installed is tracked in `physicallybased_MyLibrary\.pb_shared_presets.j
 | Color space | auto | Detected from Maya's rendering space (ACEScg or linear sRGB). The Maya rendering space is shown below it. |
 | Specular roughness | 0.45 | Default roughness. Transmissive materials use 0.001. |
 | Database value if meaningful | on | Uses the database roughness when it is not 0 or 0.5 (generic placeholders), e.g. brick 1.0, paper 0.8. |
-| SSS scale | 10 | Multiplier on the database subsurface radius (mm) → `subsurfaceDmfp`. |
-| Extinction scale | 1 | Multiplier on interior extinction. Coefficients are treated as per cm: 1 for a scene in cm, 100 in meters. |
+| SSS scale (mm) | 10 | Multiplier on the database subsurface radius (mm) → `subsurfaceDmfp`. |
+| Extinction scale (cm) | 1 | Multiplier on interior extinction. Coefficients are treated as per cm: 1 for a scene in cm, 100 in meters. |
 | Non-directional (faster SSS / Glass Single Scatter) | off | Replaces directional scattering by isotropic scattering: reduced scattering with `g` = 0 in the glass interior, Directionality 0 for subsurface and single scatter. Similar look, much faster. Also applies to MyLibrary presets (the files are not changed). |
 | Reset other attributes to defaults | on | *Apply* only: resets every unconnected attribute to its default before applying. |
 
