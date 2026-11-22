@@ -38,6 +38,7 @@ Version:  1.1.0 (2026-11-22)
 License:  MIT (see below)
 Credits:  Developed with the assistance of Claude (Anthropic).
           Material data: Physically Based API, CC0 (Anton Palmqvist and contributors).
+          Shared MyLibrary presets (presets folder) and thumbnails: Julien Duval.
 Thanks:   A special thank you to Anton Palmqvist and all the contributors of
           Physically Based (https://physicallybased.info). This tool exists because
           they measured, gathered and freely shared these values with the CG community.
@@ -1699,9 +1700,9 @@ and assign it to the selected objects / faces.</li>
 <tr><td><b>Database value if meaningful</b></td><td>Use the physicallybased.info roughness when it is
 not 0 or 0.5 (generic placeholders), e.g. brick 1.0, paper 0.8, pearl 0.35.
 Otherwise the value on the left is used (glass: 0.001).</td></tr>
-<tr><td><b>SSS scale</b></td><td>Multiplier on the database subsurface radius (mm) -&gt; subsurfaceDmfp
+<tr><td><b>SSS scale (mm)</b></td><td>Multiplier on the database subsurface radius (mm) -&gt; subsurfaceDmfp
 (default %(sss)g).</td></tr>
-<tr><td><b>Extinction scale</b></td><td>Multiplier on the interior extinction of transmissive materials.
+<tr><td><b>Extinction scale (cm)</b></td><td>Multiplier on the interior extinction of transmissive materials.
 Database coefficients are per cm: 1 for a scene in cm, 100 in meters.
 Raise it to exaggerate the tint on small objects.</td></tr>
 <tr><td><b>Non-directional (faster SSS / Glass Single Scatter)</b></td><td>Replace directional (forward)
@@ -1728,7 +1729,7 @@ Move to category act on all the selected presets (Ctrl / Shift-click); Move to c
 preview scene (%(thumb)d px), saved next to the .mel. Ctrl / Shift-click in the list to render
 several in a row; Esc cancels. <b>Draft quality</b>: faster, noisier thumbnails. Your own .png or .jpg with the preset's name also works.</li>
 <li>Deleted presets and categories go to the <code>_trash</code> subfolder and can be restored.</li>
-<li><b>Shared presets</b>: the presets shipped in the tool's <code>presets</code> folder are copied into
+<li><b>Shared presets</b>: the presets by Julien Duval shipped in the tool's <code>presets</code> folder are copied into
 MyLibrary at launch. Your changes are never overwritten, and a shared preset you delete does not come back.</li>
 </ul>
 
@@ -1764,6 +1765,7 @@ shared these values with the CG community. Missing material or wrong value?
 
 <p><b>Credits</b><br>
 Material data: Physically Based API, CC0, by Anton Palmqvist and contributors.<br>
+Shared MyLibrary presets and thumbnails: %(author)s (MIT, like the tool).<br>
 Developed with the assistance of Claude (Anthropic).</p>
 
 <p><b>License</b><br>
@@ -1997,7 +1999,7 @@ if QtWidgets is not None:
             self.sss.setValue(DEFAULT_SSS_SCALE)
             self.sss.setToolTip("Multiplier on the database subsurface radius (mm) -> subsurfaceDmfp (default 10)")
             self.sss.valueChanged.connect(lambda *_: self._on_select(self.list.currentItem()))
-            form.addRow(_ResetLabel("SSS scale:", lambda: self.sss.setValue(DEFAULT_SSS_SCALE),
+            form.addRow(_ResetLabel("SSS scale (mm):", lambda: self.sss.setValue(DEFAULT_SSS_SCALE),
                                     [self.sss], "%g" % DEFAULT_SSS_SCALE), self.sss)
             self.ext = QtWidgets.QDoubleSpinBox()
             self.ext.setDecimals(3)
@@ -2007,7 +2009,7 @@ if QtWidgets is not None:
                                 "Database coefficients are per cm: 1 for a scene in cm, 100 in meters.\n"
                                 "Raise it to exaggerate the tint on small objects.")
             self.ext.valueChanged.connect(lambda *_: self._on_select(self.list.currentItem()))
-            form.addRow(_ResetLabel("Extinction scale:", lambda: self.ext.setValue(1.0), [self.ext], "1"), self.ext)
+            form.addRow(_ResetLabel("Extinction scale (cm):", lambda: self.ext.setValue(1.0), [self.ext], "1"), self.ext)
             self.reduce = QtWidgets.QCheckBox("Non-directional (faster SSS / Glass Single Scatter)")
             self.reduce.setToolTip("Replace directional (forward) scattering by isotropic scattering.\n"
                                    "Similar look, much faster. Applies to the database and to MyLibrary\n"

@@ -124,9 +124,10 @@ folders:
 
 SHARED PRESETS
 --------------
-The tool ships with presets by the author (reference balls, skin, glass,
-liquids...) in its presets folder, laid out like MyLibrary (category
-subfolders, .mel + .png). At launch they are copied into your MyLibrary:
+The tool ships with presets by Julien Duval (reference balls, skin,
+plastics, glass, liquids...) in its presets folder, laid out like
+MyLibrary (category subfolders, .mel + .png). At launch they are copied
+into your MyLibrary:
 - a new shared preset is added, unless you already have a preset with the
   same name;
 - an updated shared preset replaces your copy only if you have not
@@ -148,10 +149,10 @@ Database value if meaningful  (default: on)
   Uses the database roughness when it is not 0 or 0.5 (generic
   placeholders), e.g. brick 1.0, paper 0.8.
 
-SSS scale  (default: 10)
+SSS scale (mm)  (default: 10)
   Multiplier on the database subsurface radius (mm) -> subsurfaceDmfp.
 
-Extinction scale  (default: 1)
+Extinction scale (cm)  (default: 1)
   Multiplier on interior extinction. Coefficients are treated as per cm:
   1 for a scene in cm, 100 for a scene in meters.
 
@@ -262,6 +263,8 @@ CREDITS
 -------
 - Author: Julien Duval
 - Developed with the assistance of Claude (Anthropic)
+- Shared MyLibrary presets and thumbnails: Julien Duval (MIT, like the
+  tool)
 - Material data: Physically Based API (https://api.physicallybased.info),
   CC0, by Anton Palmqvist and contributors
 
