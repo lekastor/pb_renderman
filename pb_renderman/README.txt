@@ -95,8 +95,11 @@ folders:
   Presets menu.
 - "Delete from MyLibrary..." moves the selected preset (and its preview
   image) to the _trash subfolder of the library, so it can be restored.
-- For a preview, put a .jpg or .png with the same name next to the .mel
-  (e.g. PxrSurface_gummyBear.jpg).
+- "Render Thumbnail" renders the selected preset with RenderMan's own
+  Preset Browser preview (same scene, lighting and renderer, 128 px) and
+  saves it next to the .mel as a .png. Saving a preset renders its
+  thumbnail automatically. You can also use your own .png or .jpg with
+  the same name as the .mel.
 - MyLibrary is available even when the database cannot be downloaded.
 
 

@@ -934,7 +934,7 @@ def load_library(folder=None):
         except Exception as exc:
             print("[PB] Could not read preset %s: %s" % (fn, exc))
             continue
-        image = next((os.path.join(folder, stem + ext) for ext in (".jpg", ".jpeg", ".png")
+        image = next((os.path.join(folder, stem + ext) for ext in (".png", ".jpg", ".jpeg")
                       if os.path.isfile(os.path.join(folder, stem + ext))), None)
         out.append({"name": display, "category": [LIBRARY_CATEGORY], "_library": True,
                     "_preset": stem, "_path": path, "_attrs": attrs, "_image": image})
@@ -1096,6 +1096,60 @@ def delete_from_library(entry):
             stem, ext = os.path.splitext(os.path.basename(path))
             shutil.move(path, os.path.join(trash, "%s_%s%s" % (stem, stamp, ext)))
     return trash
+
+
+def render_library_thumbnail(entry):
+    """
+    Renders the RenderMan Preset Browser standard preview (same scene, lighting
+    and renderer, 128 px) for a MyLibrary preset, and saves it next to the .mel
+    as <preset>.png. Needs RenderMan for Maya. Returns the image path.
+    """
+    import shutil
+    import tempfile
+    from maya import cmds
+    _ensure_renderman()
+    import rfm2.ui.assets_browser as rab
+    import rman_utils.rman_assets.lib as ral
+    from rman_utils.rman_assets.core import RmanAsset, FilePath
+
+    tmpdir = tempfile.mkdtemp(prefix="pb_thumb_")
+    undo_state = cmds.undoInfo(query=True, stateWithoutFlush=True)
+    cmds.undoInfo(stateWithoutFlush=False)          # temporary nodes stay out of the undo queue
+    shader = sg = None
+    try:
+        shader = cmds.shadingNode("PxrSurface", asShader=True, name="pbThumb_PxrSurface")
+        sg = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name="pbThumb_SG")
+        cmds.connectAttr(shader + ".outColor", sg + ".surfaceShader", force=True)
+        _apply_preset([shader], entry, [])
+
+        asset = RmanAsset(assetType="nodeGraph", label=entry["name"], previewType="std")
+        try:                                          # same color config as the Preset Browser
+            import rfm2.ui.maya_color_manager as mcm
+            mgr = mcm.color_manager()
+            asset.ocio = {"config": mgr.cfg_name, "path": mgr.config_file_path(),
+                          "rules": mgr.conversion_rules, "aliases": mgr.aliases}
+        except Exception:
+            pass
+        rab.parse_node_graph([sg], asset)
+        asset.save(FilePath(os.path.join(tmpdir, "asset.json")))
+        ral.renderAssetPreview(asset, progress=rab.MayaProgress(),
+                               host_tree=os.environ.get("RMSTREE", ""),
+                               rmantree=os.environ.get("RMANTREE") or None)
+        rendered = os.path.join(tmpdir, ral.getCurrentPreviewHdrIcon())
+        if not os.path.isfile(rendered):
+            rendered = next((os.path.join(tmpdir, f) for f in os.listdir(tmpdir)
+                             if f.endswith("_100.png")), None)
+        if not rendered or not os.path.isfile(rendered):
+            raise RuntimeError("RenderMan did not produce a preview image.")
+        target = os.path.join(os.path.dirname(entry["_path"]), entry["_preset"] + ".png")
+        shutil.copyfile(rendered, target)
+        return target
+    finally:
+        for node in (sg, shader):
+            if node and cmds.objExists(node):
+                cmds.delete(node)
+        cmds.undoInfo(stateWithoutFlush=undo_state)
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def save_to_library(shader, name):
@@ -1394,8 +1448,14 @@ if QtWidgets is not None:
                                        "of the library (recoverable).")
             self.delete_btn.setEnabled(False)
             self.delete_btn.clicked.connect(self._delete_library)
+            self.thumb_btn = QtWidgets.QPushButton("Render Thumbnail")
+            self.thumb_btn.setToolTip("Render the selected MyLibrary preset with the RenderMan\n"
+                                      "Preset Browser preview scene (128 px), saved next to the .mel.")
+            self.thumb_btn.setEnabled(False)
+            self.thumb_btn.clicked.connect(self._render_thumbnail)
             lrow = QtWidgets.QHBoxLayout()
             lrow.addWidget(self.save_btn)
+            lrow.addWidget(self.thumb_btn)
             lrow.addWidget(self.delete_btn)
             right.addLayout(lrow)
             self.status = QtWidgets.QLabel("")
@@ -1477,6 +1537,7 @@ if QtWidgets is not None:
             m = item.data(QtCore.Qt.UserRole)
             cs = self.cs.currentText()
             self.delete_btn.setEnabled(bool(m.get("_library")))
+            self.thumb_btn.setEnabled(bool(m.get("_library")))
             if m.get("_library"):
                 self._show_preset(m)
                 return
@@ -1549,7 +1610,25 @@ if QtWidgets is not None:
                     self.preview.setPixmap(pm.scaled(256, 256, QtCore.Qt.KeepAspectRatio,
                                                      QtCore.Qt.SmoothTransformation))
                     return
-            self.preview.setText("MyLibrary\n\nAdd %s.jpg next to the .mel\nfor a preview" % m["_preset"])
+            self.preview.setText("MyLibrary\n\nNo thumbnail yet:\nclick Render Thumbnail")
+
+        def _render_thumbnail(self, entry=None):
+            if entry is None:
+                item = self.list.currentItem()
+                entry = item.data(QtCore.Qt.UserRole) if item else None
+            if not entry or not entry.get("_library"):
+                self.status.setText("Pick a MyLibrary preset first.")
+                return
+            self.status.setText("Rendering thumbnail: %s…" % entry["name"])
+            QtWidgets.QApplication.processEvents()
+            try:
+                path = render_library_thumbnail(entry)
+            except Exception as exc:
+                self.status.setText("Thumbnail failed: %s" % exc)
+                raise
+            print("[PB] Thumbnail: %s" % path)
+            self._rebuild(select=entry["_preset"])
+            self.status.setText("Thumbnail rendered: %s" % entry["name"])
 
         def _delete_library(self):
             item = self.list.currentItem()
@@ -1603,6 +1682,12 @@ if QtWidgets is not None:
             print("[PB] Saved %s -> %s" % (short, path))
             self._rebuild(select=stem)
             self.status.setText("Saved to MyLibrary: " + stem[len(PRESET_PREFIX):])
+            entry = next((e for e in self.library if e["_preset"] == stem), None)
+            if entry:
+                try:
+                    self._render_thumbnail(entry)
+                except Exception as exc:
+                    print("[PB] Preset saved, thumbnail failed: %s" % exc)
 
         def _load_image(self, m):
             name = m.get("name", "")
