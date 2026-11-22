@@ -152,6 +152,9 @@ Reset other attributes to defaults  (default: on)
 Click an option's name to reset it to its default value.
 Right-click a checkbox for the same.
 
+Help menu: the User Guide (F1), links to MyLibrary, the Physically Based
+website and GitHub, and About (version, credits, license).
+
 
 HOW MATERIALS ARE MAPPED
 ------------------------

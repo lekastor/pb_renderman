@@ -65,6 +65,11 @@ SOFTWARE.
 
 __author__ = "Julien Duval"
 __version__ = "1.0.0"
+TOOL_NAME = "Physically Based for RenderMan"
+TOOL_TAGLINE = "Real-world material values for PxrSurface in Maya"
+HOMEPAGE = "https://github.com/lekastor/pb_renderman"
+DATABASE_URL = "https://physicallybased.info"
+DATABASE_REPO = "https://github.com/AntonPalmqvist/physically-based-api"
 __license__ = "MIT"
 
 
@@ -1570,6 +1575,122 @@ def install_shelf_button(shelf=None):
 
 
 # --------------------------------------------------------------------------- #
+#  Help: user guide and About (same wording as the tooltips)
+# --------------------------------------------------------------------------- #
+
+def user_guide_html():
+    return """
+<h2>%(name)s — User Guide</h2>
+<p>%(tagline)s. Browse the <a href="%(db)s">Physically Based</a> database and set up a
+PxrSurface from measured values: metals with complex IOR, glass and liquids with interior
+absorption, scattering media, skin subsurface and thin-film iridescence, converted to the
+scene's rendering space. Hover any control for its tooltip.</p>
+
+<h3>1. Pick a material</h3>
+<ul>
+<li><b>Search</b>: by name or tag.</li>
+<li><b>Physically Based</b> menu: the database categories. <b>MyLibrary</b> menu: your own
+categories. The <b>Hide</b> checkbox next to each menu hides its materials.</li>
+<li>The panel shows the database render (or your thumbnail), the values and exactly what will be set.</li>
+</ul>
+
+<h3>2. Apply it</h3>
+<ul>
+<li><b>Apply to Selected Materials</b>: update the PxrSurface nodes that are selected,
+or assigned to the selected objects. Creates nothing.</li>
+<li><b>Create &amp; Assign Material</b>: create a new PxrSurface + shading group
+and assign it to the selected objects / faces.</li>
+</ul>
+<p>Each action is one undo step. Attributes connected to textures are never overwritten.</p>
+
+<h3>Options</h3>
+<p>Click an option's name to reset it to its default value; right-click a checkbox for the same.</p>
+<table border="0" cellspacing="0" cellpadding="3">
+<tr><td><b>Color space</b></td><td>Detected from Maya's rendering space (ACEScg or linear sRGB).</td></tr>
+<tr><td><b>Specular roughness</b></td><td>Primary Specular roughness (default %(rough)g, glass 0.001).</td></tr>
+<tr><td><b>Database value if meaningful</b></td><td>Use the physicallybased.info roughness when it is
+not 0 or 0.5 (generic placeholders), e.g. brick 1.0, paper 0.8, pearl 0.35.
+Otherwise the value on the left is used (glass: 0.001).</td></tr>
+<tr><td><b>SSS scale</b></td><td>Multiplier on the database subsurface radius (mm) -&gt; subsurfaceDmfp
+(default %(sss)g).</td></tr>
+<tr><td><b>Extinction scale</b></td><td>Multiplier on the interior extinction of transmissive materials.
+Database coefficients are per cm: 1 for a scene in cm, 100 in meters.
+Raise it to exaggerate the tint on small objects.</td></tr>
+<tr><td><b>Non-directional (faster SSS / Glass Single Scatter)</b></td><td>Replace directional (forward)
+scattering by isotropic scattering. Similar look, much faster; works in XPU. Applies to the database
+and to MyLibrary presets. Blood and coffee are always non-directional.</td></tr>
+<tr><td><b>Reset other attributes to defaults</b></td><td>Apply to Selected Materials: reset every attribute
+not driven by the database to its default first. Connected attributes (textures) are kept.</td></tr>
+</table>
+
+<h3>MyLibrary: your own presets</h3>
+<p>Stored in <code>%(lib)s</code>, shared by all Maya versions. Presets are applied exactly as
+saved; only <i>Non-directional</i> applies to them.</p>
+<ul>
+<li><b>Save Selected to MyLibrary…</b>: save the selected PxrSurface (or the one assigned to the
+selected object) as a preset, in the category picked in the MyLibrary menu.</li>
+<li><b>Update Selected to MyLibrary…</b>: overwrite the preset picked in the list with the selected
+PxrSurface. Name, category and thumbnail files are kept.</li>
+<li><b>New / Rename / Delete Category</b>: a category is a subfolder of the library. Rename and
+Delete act on the category picked in the MyLibrary menu.</li>
+<li><b>Right-click a preset</b>: Rename…, Render Thumbnail, Move to category, Delete….</li>
+<li><b>Render Thumbnail</b>: render the selected presets with the RenderMan Preset Browser
+preview scene (%(thumb)d px), saved next to the .mel. Ctrl / Shift-click in the list to render
+several in a row; Esc cancels. Your own .png or .jpg with the preset's name also works.</li>
+<li>Deleted presets and categories go to the <code>_trash</code> subfolder and can be restored.</li>
+</ul>
+
+<h3>Tips and limitations</h3>
+<ul>
+<li>Multiscattering is not supported in XPU: tick <i>Non-directional</i> for juices, beer, wine…</li>
+<li>The database does not state the unit of its volume coefficients (per cm assumed):
+use <i>Extinction scale</i> if a liquid looks off.</li>
+<li>The database is cached for a week in <code>%(cache)s</code>.</li>
+<li>Full documentation: README.txt next to the script, or <a href="%(home)s">%(home)s</a>.</li>
+</ul>
+""" % {"name": TOOL_NAME, "tagline": TOOL_TAGLINE, "db": DATABASE_URL, "rough": DEFAULT_SPEC_ROUGHNESS,
+       "sss": DEFAULT_SSS_SCALE, "lib": library_dir(create=False), "thumb": THUMBNAIL_SIZE,
+       "cache": _cache_path(), "home": HOMEPAGE}
+
+
+def about_html():
+    from maya import cmds
+    rmantree = os.environ.get("RMANTREE", "")
+    rman = os.path.basename(rmantree.rstrip("/\\\\")) if rmantree else "not loaded"
+    qt = "PySide6" if QtCore and QtCore.__name__.startswith("PySide6") else "PySide2"
+    return """
+<h2>%(name)s</h2>
+<p><i>%(tagline)s</i></p>
+<p>Version %(version)s<br>
+by <b>%(author)s</b><br>
+<a href="%(home)s">%(home)s</a></p>
+
+<p><b>Thanks</b><br>
+A special thank you to <b>Anton Palmqvist</b> and all the contributors of
+<a href="%(db)s">Physically Based</a>. This tool exists because they measured, gathered and freely
+shared these values with the CG community. Missing material or wrong value?
+<a href="%(dbrepo)s">Contribute to the database</a>.</p>
+
+<p><b>Credits</b><br>
+Material data: Physically Based API, CC0, by Anton Palmqvist and contributors.<br>
+Developed with the assistance of Claude (Anthropic).</p>
+
+<p><b>License</b><br>
+MIT License. Copyright (c) 2026 %(author)s.<br>
+Free to use, modify and share, including commercially, provided the copyright and license
+notice are kept. Provided "as is", without warranty of any kind. Full text in the header of
+pb_renderman.py.</p>
+
+<p style="color:#888">Independent project, not affiliated with or endorsed by Pixar, Autodesk or
+physicallybased.info. RenderMan is a trademark of Pixar; Maya is a trademark of Autodesk.</p>
+
+<p style="color:#888">Maya %(maya)s · %(rman)s · %(qt)s · Python %(py)s</p>
+""" % {"name": TOOL_NAME, "tagline": TOOL_TAGLINE, "version": __version__, "author": __author__,
+       "home": HOMEPAGE, "db": DATABASE_URL, "dbrepo": DATABASE_REPO, "maya": cmds.about(version=True),
+       "rman": rman, "qt": qt, "py": sys.version.split()[0]}
+
+
+# --------------------------------------------------------------------------- #
 #  Qt UI
 # --------------------------------------------------------------------------- #
 
@@ -1648,7 +1769,7 @@ if QtWidgets is not None:
         def __init__(self, parent=None):
             super(PBWindow, self).__init__(parent)
             self.setObjectName(WINDOW_OBJECT)
-            self.setWindowTitle("Physically Based for RenderMan  v%s — %s" % (__version__, __author__))
+            self.setWindowTitle("%s  v%s — %s" % (TOOL_NAME, __version__, __author__))
             self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
             self.resize(720, 520)
             icon = QtGui.QIcon()
@@ -1671,6 +1792,7 @@ if QtWidgets is not None:
         # -- UI --
         def _build(self):
             lay = QtWidgets.QHBoxLayout(self)
+            lay.setMenuBar(self._build_menu())
 
             left = QtWidgets.QVBoxLayout()
             self.search = QtWidgets.QLineEdit()
@@ -1844,6 +1966,44 @@ if QtWidgets is not None:
             self.status = QtWidgets.QLabel("")
             right.addWidget(self.status)
             lay.addLayout(right, 1)
+
+        # -- Help menu --
+        def _build_menu(self):
+            bar = QtWidgets.QMenuBar(self)
+            menu = bar.addMenu("Help")
+            act = menu.addAction("User Guide")
+            act.setShortcut(QtGui.QKeySequence("F1"))
+            act.triggered.connect(lambda *_: self._show_html("%s — User Guide" % TOOL_NAME, user_guide_html(),
+                                                             (640, 620)))
+            menu.addSeparator()
+            for label, target in (("Open MyLibrary Folder", lambda: library_dir()),
+                                  ("Physically Based Website", lambda: DATABASE_URL),
+                                  ("%s on GitHub" % TOOL_NAME, lambda: HOMEPAGE)):
+                a = menu.addAction(label)
+                a.triggered.connect(lambda *_, t=target: self._open(t()))
+            menu.addSeparator()
+            a = menu.addAction("About %s" % TOOL_NAME)
+            a.triggered.connect(lambda *_: self._show_html("About %s" % TOOL_NAME, about_html(), (520, 560)))
+            return bar
+
+        @staticmethod
+        def _open(target):
+            url = QtCore.QUrl(target) if "://" in target else QtCore.QUrl.fromLocalFile(target)
+            QtGui.QDesktopServices.openUrl(url)
+
+        def _show_html(self, title, html, size):
+            dlg = QtWidgets.QDialog(self)
+            dlg.setWindowTitle(title)
+            dlg.resize(*size)
+            v = QtWidgets.QVBoxLayout(dlg)
+            text = QtWidgets.QTextBrowser()
+            text.setOpenExternalLinks(True)
+            text.setHtml(html)
+            v.addWidget(text)
+            close = QtWidgets.QPushButton("Close")
+            close.clicked.connect(dlg.accept)
+            v.addWidget(close, 0, QtCore.Qt.AlignRight)
+            dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
 
         # -- data --
         def reload(self, force):

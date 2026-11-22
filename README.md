@@ -78,6 +78,8 @@ The **MyLibrary** category lists your own PxrSurface presets, stored in their ow
 
 Click an option's name to reset it to its default value; right-click a checkbox for the same.
 
+**Help** menu: the *User Guide* (F1), links to MyLibrary, the Physically Based website and GitHub, and *About* (version, credits, license).
+
 ## How materials are mapped
 
 **Opaque dielectrics**: `diffuseColor` from the database color, Primary Specular in GGX with physical Fresnel and the database IOR.
