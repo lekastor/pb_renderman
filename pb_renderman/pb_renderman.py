@@ -1442,17 +1442,17 @@ if QtWidgets is not None:
                                      "as a preset in MyLibrary (" + library_dir(create=False) + ").\n"
                                      "Tip: put a .jpg or .png with the same name next to the .mel\n"
                                      "to get a preview.")
-            self.save_btn.clicked.connect(self._save_library)
+            self.save_btn.clicked.connect(lambda *_: self._save_library())
             self.delete_btn = QtWidgets.QPushButton("Delete from MyLibrary…")
             self.delete_btn.setToolTip("Move the selected MyLibrary preset to the _trash subfolder\n"
                                        "of the library (recoverable).")
             self.delete_btn.setEnabled(False)
-            self.delete_btn.clicked.connect(self._delete_library)
+            self.delete_btn.clicked.connect(lambda *_: self._delete_library())
             self.thumb_btn = QtWidgets.QPushButton("Render Thumbnail")
             self.thumb_btn.setToolTip("Render the selected MyLibrary preset with the RenderMan\n"
                                       "Preset Browser preview scene (128 px), saved next to the .mel.")
             self.thumb_btn.setEnabled(False)
-            self.thumb_btn.clicked.connect(self._render_thumbnail)
+            self.thumb_btn.clicked.connect(lambda *_: self._render_thumbnail())
             lrow = QtWidgets.QHBoxLayout()
             lrow.addWidget(self.save_btn)
             lrow.addWidget(self.thumb_btn)
