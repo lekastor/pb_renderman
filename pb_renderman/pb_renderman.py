@@ -1099,7 +1099,51 @@ def delete_from_library(entry):
 
 
 THUMBNAIL_SIZE = 256              # rendered resolution (Preset Browser: 128 px), shown 1:1
-THUMBNAIL_HDR = "Luxo_jr"         # Preset Browser light rigs: "Winter_forest" (default) or "Luxo_jr"
+THUMBNAIL_HDR = "Luxo_jr"         # default HDRI (any name from thumbnail_hdris()), changeable in the UI
+_HDR_OPTIONVAR = "pbRendermanThumbnailHDR"
+
+
+def thumbnail_hdris():
+    """
+    HDRIs available for thumbnails, as {name: asset.json path}, found under
+    RMANTREE whatever the RenderMan version:
+      - the Preset Browser preview light rigs (rmanAssetResources/assets)
+      - the factory library environment maps (RenderManAssetLibrary/EnvironmentMaps)
+    """
+    rmantree = os.environ.get("RMANTREE")
+    found = {}
+    if not rmantree:
+        return found
+    roots = [os.path.join(rmantree, "lib", "rmanAssetResources", "assets"),
+             os.path.join(rmantree, "lib", "RenderManAssetLibrary", "EnvironmentMaps")]
+    for root in roots:
+        for folder, dirs, files in os.walk(root):
+            if folder.endswith(".rma") and "asset.json" in files:
+                try:
+                    with open(os.path.join(folder, "asset.json"), "r") as f:
+                        if "envMap" not in json.load(f)["RenderManAsset"]["asset"]:
+                            continue
+                except Exception:
+                    continue
+                name = os.path.basename(folder)[:-4]
+                found.setdefault(name, os.path.join(folder, "asset.json"))
+                dirs[:] = []
+    return found
+
+
+def get_thumbnail_hdr():
+    try:
+        from maya import cmds
+        if cmds.optionVar(exists=_HDR_OPTIONVAR):
+            return cmds.optionVar(query=_HDR_OPTIONVAR)
+    except Exception:
+        pass
+    return THUMBNAIL_HDR
+
+
+def set_thumbnail_hdr(name):
+    from maya import cmds
+    cmds.optionVar(stringValue=(_HDR_OPTIONVAR, name))
 THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
 THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
 THUMBNAIL_PIXEL_VARIANCE = 0.05   # Preset Browser: 0.01
@@ -1129,7 +1173,7 @@ def _ocio_display_args(asset):
     return sets
 
 
-def render_library_thumbnail(entry):
+def render_library_thumbnail(entry, hdr=None):
     """
     Renders a MyLibrary preset in the RenderMan Preset Browser preview scene
     (same scene, lighting and renderer), at THUMBNAIL_SIZE px with more samples,
@@ -1202,11 +1246,17 @@ def render_library_thumbnail(entry):
         ral._writeConfigRIB(scene, FilePath(rmantree), FilePath(os.environ.get("RMSTREE", "")), matdir, "std")
         ral._writeDisplayChannelRIB(asset, ribfile)
         ral._writeDisplayFilterRIB(asset, scene)
-        try:
-            ral._writeLightRIB(asset, scene, hdr=THUMBNAIL_HDR)
-        except Exception:
-            # this RenderMan version has no such light rig: use the Preset Browser's current one
-            print("[PB] Light rig '%s' not found, using the Preset Browser's." % THUMBNAIL_HDR)
+        # light rig: any envMap asset (preview rigs or factory library), written as
+        # the Preset Browser does it for its own rigs
+        hdr = hdr or get_thumbnail_hdr()
+        hdris = thumbnail_hdris()
+        if hdr in hdris:
+            rig = RmanAsset()
+            rig.load(FilePath(hdris[hdr]))
+            with open(scene.join("m_lightrig_envMap.rib").os_path(), "w") as f:
+                f.write(rig.getRIB())
+        else:
+            print("[PB] HDRI '%s' not found, using the Preset Browser's." % hdr)
             ral._writeLightRIB(asset, scene, hdr=ral.previewHdrAsset(ral.getPreviewHdrIdx()))
 
         # 3. higher resolution and more samples than the Preset Browser
@@ -1520,6 +1570,20 @@ if QtWidgets is not None:
             self.reduce.toggled.connect(lambda *_: self._on_select(self.list.currentItem()))
             _checkbox_reset_menu(self.reduce, False)
             form.addRow(self.reduce)
+            self.hdr = QtWidgets.QComboBox()
+            self.hdr.setToolTip("HDRI lighting the MyLibrary thumbnails: the Preset Browser's\n"
+                                "preview rigs and the factory library environment maps.")
+            try:
+                if not os.environ.get("RMANTREE"):
+                    _ensure_renderman()
+                names = sorted(thumbnail_hdris(), key=str.lower)
+            except Exception:
+                names = []
+            self.hdr.addItems(names or [THUMBNAIL_HDR])
+            current = get_thumbnail_hdr()
+            self.hdr.setCurrentText(current if current in names else THUMBNAIL_HDR)
+            self.hdr.currentTextChanged.connect(lambda name: set_thumbnail_hdr(name))
+            form.addRow(_ResetLabel("Thumbnail HDRI:", lambda: self.hdr.setCurrentText(THUMBNAIL_HDR)), self.hdr)
             self.reset_cb = QtWidgets.QCheckBox("Reset other attributes to defaults")
             self.reset_cb.setChecked(True)
             self.reset_cb.setToolTip("Apply to Selected Materials: reset every attribute not driven by the\n"
@@ -1732,10 +1796,10 @@ if QtWidgets is not None:
             if not entry or not entry.get("_library"):
                 self.status.setText("Pick a MyLibrary preset first.")
                 return
-            self.status.setText("Rendering thumbnail: %s…" % entry["name"])
+            self.status.setText("Rendering thumbnail: %s (%s)…" % (entry["name"], self.hdr.currentText()))
             QtWidgets.QApplication.processEvents()
             try:
-                path = render_library_thumbnail(entry)
+                path = render_library_thumbnail(entry, self.hdr.currentText())
             except Exception as exc:
                 self.status.setText("Thumbnail failed: %s" % exc)
                 raise

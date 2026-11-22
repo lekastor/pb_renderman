@@ -97,7 +97,7 @@ folders:
   image) to the _trash subfolder of the library, so it can be restored.
 - "Render Thumbnail" renders the selected preset in RenderMan's own
   Preset Browser preview scene (same scene and renderer, lit by the
-  Luxo_jr HDR), at 256 px (the browser renders 128 px)
+  HDRI chosen in "Thumbnail HDRI"), at 256 px (the browser renders 128 px)
   with up to 512 samples, converted to Maya's display/view transform, and
   saves it next to the .mel as a .png. You can also use your own .png or
   .jpg with the same name as the .mel.
@@ -129,6 +129,12 @@ Non-directional (faster SSS / Glass Single Scatter)  (default: off)
   scattering with g = 0 in the glass interior, Directionality 0 for
   subsurface and single scatter. Similar look, much faster, works in XPU.
   Also applies to MyLibrary presets (the files are not changed).
+
+Thumbnail HDRI  (default: Luxo_jr)
+  HDRI lighting the MyLibrary thumbnails: the Preset Browser's preview
+  rigs (Luxo_jr, Winter_forest) and the factory library environment maps
+  (Annecy, GriffithObservatory, Pixar_Atrium...), found in the installed
+  RenderMan. Remembered between sessions.
 
 Reset other attributes to defaults  (default: on)
   Apply only: resets every unconnected attribute to its default before
