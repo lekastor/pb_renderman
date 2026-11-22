@@ -38,6 +38,9 @@ Version:  1.0.0 (2026-11-21)
 License:  MIT (see below)
 Credits:  Developed with the assistance of Claude (Anthropic).
           Material data: Physically Based API, CC0 (Anton Palmqvist and contributors).
+Thanks:   A special thank you to Anton Palmqvist and all the contributors of
+          Physically Based (https://physicallybased.info). This tool exists because
+          they measured, gathered and freely shared these values with the CG community.
 
 Copyright (c) 2026 Julien Duval
 

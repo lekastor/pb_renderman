@@ -216,6 +216,15 @@ Your presets live in Documents\maya\physicallybased_MyLibrary\.
 Back this folder up: it is your own data.
 
 
+THANKS
+------
+A special thank you to Anton Palmqvist and all the contributors of
+Physically Based (https://physicallybased.info). This tool exists because
+they measured, gathered and freely shared these values with the CG community.
+If you find a missing material or a wrong value, consider contributing to the
+database: https://github.com/AntonPalmqvist/physically-based-api
+
+
 CREDITS
 -------
 - Author: Julien Duval
