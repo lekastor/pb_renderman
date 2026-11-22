@@ -939,6 +939,75 @@ def parse_preset(path):
 _PRESET_IMAGE_EXTS = (".png", ".jpg", ".jpeg")
 
 
+SHARED_PRESETS_DIR = "presets"           # shipped presets, next to this file
+_SHARED_MANIFEST = ".pb_shared_presets.json"
+
+
+def shared_presets_dir():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), SHARED_PRESETS_DIR)
+
+
+def _file_hash(path):
+    import hashlib
+    with open(path, "rb") as f:
+        return hashlib.sha1(f.read()).hexdigest()
+
+
+def install_shared_presets():
+    """
+    Copies the presets shipped with the tool (the presets folder next to this file,
+    same layout as MyLibrary: category subfolders, .mel + preview images) into MyLibrary.
+    - a new shipped preset is copied, unless a file of the same name already exists;
+    - an updated shipped preset replaces the user's copy only if the user did not modify it;
+    - a shipped preset the user deleted or modified is left alone.
+    What was installed is tracked in MyLibrary/.pb_shared_presets.json. Returns the files copied.
+    """
+    import shutil
+    src_root = shared_presets_dir()
+    if not os.path.isdir(src_root):
+        return []
+    lib = library_dir()
+    manifest_path = os.path.join(lib, _SHARED_MANIFEST)
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    except Exception:
+        manifest = {}
+    copied, changed = [], False
+    for sub in [""] + library_categories(src_root):
+        folder = os.path.join(src_root, sub)
+        for fn in sorted(os.listdir(folder)):
+            src = os.path.join(folder, fn)
+            if not os.path.isfile(src) or not fn.lower().endswith((".mel",) + _PRESET_IMAGE_EXTS):
+                continue
+            rel = "/".join(p for p in (sub, fn) if p)
+            dest = os.path.join(lib, sub, fn)
+            new = _file_hash(src)
+            old = manifest.get(rel)
+            if old == new:
+                continue                                   # up to date, or deleted / modified by the user
+            exists = os.path.isfile(dest)
+            if not exists and old is None:
+                ok = True                                  # new shipped preset
+            elif exists and old is not None:
+                ok = _file_hash(dest) == old               # update, only if the user did not modify it
+            else:
+                ok = False                                 # user's own file of the same name, or deleted
+            if ok:
+                if not os.path.isdir(os.path.dirname(dest)):
+                    os.makedirs(os.path.dirname(dest))
+                shutil.copy2(src, dest)
+                copied.append(rel)
+            manifest[rel] = new
+            changed = True
+    if changed:
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=1, sort_keys=True)
+    if copied:
+        print("[PB] Shared presets installed in MyLibrary: " + ", ".join(copied))
+    return copied
+
+
 def library_categories(root=None):
     """MyLibrary categories: the subfolders of the library (not _trash or hidden ones)."""
     root = root or library_dir()
@@ -1647,6 +1716,8 @@ Delete act on the category picked in the MyLibrary menu.</li>
 preview scene (%(thumb)d px), saved next to the .mel. Ctrl / Shift-click in the list to render
 several in a row; Esc cancels. <b>Draft quality</b>: faster, noisier thumbnails. Your own .png or .jpg with the preset's name also works.</li>
 <li>Deleted presets and categories go to the <code>_trash</code> subfolder and can be restored.</li>
+<li><b>Shared presets</b>: the presets shipped in the tool's <code>presets</code> folder are copied into
+MyLibrary at launch. Your changes are never overwritten, and a shared preset you delete does not come back.</li>
 </ul>
 
 <h3>Tips and limitations</h3>
@@ -1796,6 +1867,10 @@ if QtWidgets is not None:
             _cache_path()  # resolved on the main thread
             self._build()
             self.pb_materials = []
+            try:
+                install_shared_presets()
+            except Exception as exc:
+                print("[PB] Shared presets not installed: %s" % exc)
             self._rebuild()          # library presets show at once, even offline
             self.reload(False)
 

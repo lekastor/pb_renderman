@@ -28,6 +28,7 @@ Author: **Julien Duval** · Version **1.1.0** · License **MIT**
        pb_renderman.py
        README.txt
        pb_renderman.png, pb_renderman_150.png, pb_renderman_200.png, pb_renderman.svg   (icon)
+       presets/   (shared presets, copied into MyLibrary at launch)
    ```
 2. Create the shelf button (once), in the Script Editor (Python tab):
    ```python
@@ -63,6 +64,15 @@ The **MyLibrary** category lists your own PxrSurface presets, stored in their ow
 - **Delete…** (right-click) moves the preset (and its preview image) to the `_trash` subfolder of the library, so it can be restored.
 - **Render Thumbnail** renders the selected preset in RenderMan's own Preset Browser preview scene (same scene and renderer, lit by RenderMan's factory Annecy HDRI, +0.5 stop), at 256 px (the browser renders 128 px) with up to 512 samples, converted to Maya's display/view transform, and saves it next to the `.mel` as a `.png`. Ctrl / Shift-click several presets to render their thumbnails one after the other (Esc cancels). Tick *Draft quality* for faster, noisier thumbnails (4–64 samples, pixel variance 0.1). You can also use your own `.png` or `.jpg` with the same name as the `.mel`.
 - MyLibrary is available even when the database cannot be downloaded.
+
+### Shared presets
+
+The tool ships with presets by the author (reference balls, skin, glass, liquids…) in its `presets` folder, laid out like MyLibrary (category subfolders, `.mel` + `.png`). At launch they are copied into your MyLibrary:
+- a new shared preset is added, unless you already have a preset with the same name;
+- an updated shared preset replaces your copy only if you have not modified it;
+- a shared preset you deleted or modified is left alone.
+
+What was installed is tracked in `physicallybased_MyLibrary\.pb_shared_presets.json`.
 
 ### Options
 
