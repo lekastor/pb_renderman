@@ -1105,19 +1105,27 @@ THUMBNAIL_PIXEL_VARIANCE = 0.05   # Preset Browser: 0.01
 
 
 def _ocio_display_args(asset):
-    """rmanoiiotool arguments converting the rendering space to Maya's display/view."""
+    """
+    rmanoiiotool argument sets converting the render (rendering space) for display,
+    with the OCIO config prman rendered with: Maya's display/view first, then the
+    config's default display/view.
+    """
     from maya import cmds
-    config = os.environ.get("OCIO") or (getattr(asset, "ocio", None) or {}).get("path")
+    config = (getattr(asset, "ocio", None) or {}).get("path") or os.environ.get("OCIO")
     if not config or not os.path.isfile(str(config)):
-        return None
+        return []
     display = view = ""
     try:
         display = cmds.colorManagementPrefs(query=True, displayName=True) or ""
         view = cmds.colorManagementPrefs(query=True, viewName=True) or ""
     except Exception:
-        pass                                    # empty = the config's default display/view
-    return ["--colorconfig", str(config), "--iscolorspace", "rendering",
-            "--ociodisplay", display, view]
+        pass
+    base = ["--colorconfig", str(config), "--iscolorspace", "rendering"]
+    sets = []
+    if display and view:
+        sets.append(base + ["--ociodisplay", display, view])
+    sets.append(base + ["--ociodisplay", "", ""])          # config defaults
+    return sets
 
 
 def render_library_thumbnail(entry):
@@ -1165,6 +1173,11 @@ def render_library_thumbnail(entry):
         rab.parse_node_graph([sg], asset)
         matdir = FilePath(tmpdir)
         asset.save(matdir.join("asset.json"))
+        # Maya hands colors over as tuples, which RenderMan's RIB writer silently turns
+        # into empty arrays ("color diffuseColor" []). Reloading the saved json gives
+        # plain lists, as when the Preset Browser imports an asset.
+        asset = RmanAsset()
+        asset.load(matdir.join("asset.json"))
     finally:
         for node in (sg, shader):
             if node and cmds.objExists(node):
@@ -1208,27 +1221,28 @@ def render_library_thumbnail(entry):
         # 5. tif (rendering space) -> png (Maya's display/view transform)
         target = os.path.join(os.path.dirname(entry["_path"]), entry["_preset"] + ".png")
         oiio = os.path.join(rmanbin, app("rmanoiiotool"))
-        attempts = []
-        display_args = _ocio_display_args(asset)
-        if display_args:
-            attempts.append([oiio, tif] + display_args + ["-d", "uint8", "-o", target])
-            # some configs have no "rendering" role
-            alt = list(display_args)
-            alt[alt.index("rendering")] = "scene_linear"
-            attempts.append([oiio, tif] + alt + ["-d", "uint8", "-o", target])
+        attempts = [[oiio, tif] + args + ["-d", "uint8", "-o", target] for args in _ocio_display_args(asset)]
+        n_ocio = len(attempts)
         attempts.append([oiio, tif, "--colorconvert", "linear", "sRGB", "-d", "uint8", "-o", target])
         attempts.append([os.path.join(rmanbin, app("sho")), "-dspy", "png", "-dspyfile", target, tif])
         errors = []
         for conv in attempts:
             res = subprocess.run(conv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startup_info())
             if res.returncode == 0 and os.path.isfile(target):
-                if not display_args or attempts.index(conv) > 1:
-                    print("[PB] Thumbnail converted without Maya's view transform.")
+                if attempts.index(conv) >= n_ocio:
+                    print("[PB] Thumbnail converted without an OCIO view transform.")
                 return target
             errors.append(res.stderr.decode(errors="replace").strip())
         raise RuntimeError("Could not convert the render to PNG:\n" + "\n".join(errors))
     finally:
         progress.End()
+        # keep the last render's working files (RIBs, asset, raw tif) for diagnosis
+        try:
+            last = os.path.join(_cache_path(), "thumbnail_last_render")
+            shutil.rmtree(last, ignore_errors=True)
+            shutil.copytree(tmpdir, last, ignore=shutil.ignore_patterns("*.zip", "*.tex", "*.tx"))
+        except Exception:
+            pass
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
@@ -1762,12 +1776,6 @@ if QtWidgets is not None:
             print("[PB] Saved %s -> %s" % (short, path))
             self._rebuild(select=stem)
             self.status.setText("Saved to MyLibrary: " + stem[len(PRESET_PREFIX):])
-            entry = next((e for e in self.library if e["_preset"] == stem), None)
-            if entry:
-                try:
-                    self._render_thumbnail(entry)
-                except Exception as exc:
-                    print("[PB] Preset saved, thumbnail failed: %s" % exc)
 
         def _load_image(self, m):
             name = m.get("name", "")

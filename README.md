@@ -58,7 +58,7 @@ The **MyLibrary** category lists your own PxrSurface presets, stored in their ow
 - They are applied exactly as saved, with the same two buttons. Only *Non-directional (faster SSS / Glass Single Scatter)* applies to them; the other options do not.
 - **Save Selected to MyLibrary…** saves the selected PxrSurface (or the one assigned to the selected object) as a new preset. The files use Maya's attribute-preset format (`.mel`), so you can also copy one into Maya's own preset folder if you want it in the Attribute Editor's *Presets* menu.
 - **Delete from MyLibrary…** moves the selected preset (and its preview image) to the `_trash` subfolder of the library, so it can be restored.
-- **Render Thumbnail** renders the selected preset in RenderMan's own Preset Browser preview scene (same scene, lighting and renderer), at 300 px (the browser renders 128 px) with up to 512 samples, converted to Maya's display/view transform, and saves it next to the `.mel` as a `.png`. Saving a preset renders its thumbnail automatically. You can also use your own `.png` or `.jpg` with the same name as the `.mel`.
+- **Render Thumbnail** renders the selected preset in RenderMan's own Preset Browser preview scene (same scene, lighting and renderer), at 300 px (the browser renders 128 px) with up to 512 samples, converted to Maya's display/view transform, and saves it next to the `.mel` as a `.png`. You can also use your own `.png` or `.jpg` with the same name as the `.mel`.
 - MyLibrary is available even when the database cannot be downloaded.
 
 ### Options
