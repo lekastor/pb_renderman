@@ -97,10 +97,10 @@ folders:
   image) to the _trash subfolder of the library, so it can be restored.
 - "Render Thumbnail" renders the selected preset in RenderMan's own
   Preset Browser preview scene (same scene, lighting and renderer), at
-  512 px with more samples than the browser's 128 px, converted to Maya's
-  display/view transform, and saves it next to the .mel as a .png. Saving a preset renders its
-  thumbnail automatically. You can also use your own .png or .jpg with
-  the same name as the .mel.
+  300 px (the browser renders 128 px) with up to 512 samples, converted
+  to Maya's display/view transform, and saves it next to the .mel as a
+  .png. Saving a preset renders its thumbnail automatically. You can also
+  use your own .png or .jpg with the same name as the .mel.
 - MyLibrary is available even when the database cannot be downloaded.
 
 

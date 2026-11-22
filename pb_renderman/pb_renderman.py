@@ -1098,8 +1098,10 @@ def delete_from_library(entry):
     return trash
 
 
-THUMBNAIL_SIZE = 512          # rendered resolution (the Preset Browser renders 128 px)
-THUMBNAIL_MAX_SAMPLES = 256   # Preset Browser: 64
+THUMBNAIL_SIZE = 300              # rendered resolution (Preset Browser: 128 px)
+THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
+THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
+THUMBNAIL_PIXEL_VARIANCE = 0.05   # Preset Browser: 0.01
 
 
 def _ocio_display_args(asset):
@@ -1187,8 +1189,8 @@ def render_library_thumbnail(entry):
         rib = re.sub(r'("int\[2\] FormatResolution"\s*)\[\s*\d+\s+\d+\s*\]',
                      r'\g<1>[%d %d]' % (THUMBNAIL_SIZE, THUMBNAIL_SIZE), rib)
         rib = re.sub(r'("int maxsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % THUMBNAIL_MAX_SAMPLES, rib)
-        rib = re.sub(r'("int minsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % (THUMBNAIL_MAX_SAMPLES // 4), rib)
-        rib = re.sub(r'("float PixelVariance"\s*)\[[^\]]*\]', r'\g<1>[0.005]', rib)
+        rib = re.sub(r'("int minsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % THUMBNAIL_MIN_SAMPLES, rib)
+        rib = re.sub(r'("float PixelVariance"\s*)\[[^\]]*\]', r'\g<1>[%g]' % THUMBNAIL_PIXEL_VARIANCE, rib)
         with open(ribfile.os_path(), "w") as f:
             f.write(rib)
 
@@ -1528,7 +1530,7 @@ if QtWidgets is not None:
             self.delete_btn.clicked.connect(lambda *_: self._delete_library())
             self.thumb_btn = QtWidgets.QPushButton("Render Thumbnail")
             self.thumb_btn.setToolTip("Render the selected MyLibrary preset with the RenderMan\n"
-                                      "Preset Browser preview scene (512 px), saved next to the .mel.")
+                                      "Preset Browser preview scene (300 px), saved next to the .mel.")
             self.thumb_btn.setEnabled(False)
             self.thumb_btn.clicked.connect(lambda *_: self._render_thumbnail())
             lrow = QtWidgets.QHBoxLayout()
