@@ -61,7 +61,7 @@ USAGE
 -----
 1. Pick a material in the list (search by name or tag). Two menus filter
    the list: Physically Based (the database categories) and MyLibrary (your
-   categories); each can also hide its materials.
+   categories); the Hide checkbox next to each one hides its materials.
    The panel shows the database render, the values and exactly what will
    be set.
 
@@ -95,8 +95,9 @@ folders:
   Maya's attribute-preset format (.mel), so you can also copy one into
   Maya's own preset folder if you want it in the Attribute Editor's
   Presets menu.
-- Categories: the MyLibrary menu has "New category...", "Rename
-  category..." and "Delete category..." at the bottom. A category is a
+- Categories: the "New Category", "Rename Category" and "Delete Category"
+  buttons under the list manage them (Rename and Delete act on the category
+  picked in the MyLibrary menu). A category is a
   subfolder of the library; deleting one moves it, with its presets, to
   _trash. New presets are saved in the category picked in the menu.
 - Right-click a MyLibrary preset in the list: Rename..., Render Thumbnail,

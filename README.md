@@ -43,7 +43,7 @@ If an older single-file version (`scripts\pb_renderman.py`) was used in the curr
 
 ## Usage
 
-1. Pick a material in the list (search by name or tag). Two menus filter the list: **Physically Based** (the database categories) and **MyLibrary** (your categories); each can also hide its materials. The panel shows the database render, the values and exactly what will be set.
+1. Pick a material in the list (search by name or tag). Two menus filter the list: **Physically Based** (the database categories) and **MyLibrary** (your categories); the **Hide** checkbox next to each one hides its materials. The panel shows the database render, the values and exactly what will be set.
 2. Choose an action:
    - **Apply to Selected Materials**: updates the `PxrSurface` nodes that are selected, or assigned to the selected objects. Creates nothing.
    - **Create & Assign Material**: creates a new `PxrSurface` + shading group and assigns it to the selected objects or faces (or creates it unassigned).
@@ -57,7 +57,7 @@ The **MyLibrary** category lists your own PxrSurface presets, stored in their ow
 
 - They are applied exactly as saved, with the same two buttons. Only *Non-directional (faster SSS / Glass Single Scatter)* applies to them; the other options do not.
 - **Save Selected to MyLibrary…** saves the selected PxrSurface (or the one assigned to the selected object) as a new preset. The files use Maya's attribute-preset format (`.mel`), so you can also copy one into Maya's own preset folder if you want it in the Attribute Editor's *Presets* menu.
-- **Categories**: the MyLibrary menu has *New category…*, *Rename category…* and *Delete category…* at the bottom. A category is a subfolder of the library; deleting one moves it, with its presets, to `_trash`. New presets are saved in the category picked in the menu.
+- **Categories**: the *New Category*, *Rename Category* and *Delete Category* buttons under the list manage them (Rename and Delete act on the category picked in the MyLibrary menu). A category is a subfolder of the library; deleting one moves it, with its presets, to `_trash`. New presets are saved in the category picked in the menu.
 - **Right-click a MyLibrary preset** in the list: Rename…, Render Thumbnail, Move to category or Delete…. Renaming and moving also take its preview image.
 - **Delete…** (right-click) moves the preset (and its preview image) to the `_trash` subfolder of the library, so it can be restored.
 - **Render Thumbnail** renders the selected preset in RenderMan's own Preset Browser preview scene (same scene and renderer, lit by RenderMan's factory Annecy HDRI), at 256 px (the browser renders 128 px) with up to 512 samples, converted to Maya's display/view transform, and saves it next to the `.mel` as a `.png`. You can also use your own `.png` or `.jpg` with the same name as the `.mel`.

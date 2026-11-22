@@ -895,8 +895,8 @@ def create_on_selection(mat, colorspace="acescg", sss_scale=DEFAULT_SSS_SCALE, r
 # --------------------------------------------------------------------------- #
 
 LIBRARY_CATEGORY = "MyLibrary"
-# special entries of the category menus (item data)
-_ALL, _HIDE, _NEW_CAT, _RENAME_CAT, _DELETE_CAT = "<all>", "<hide>", "<new>", "<rename>", "<delete>"
+# "All categories" entry of the category menus (item data), category button actions
+_ALL, _NEW_CAT, _RENAME_CAT, _DELETE_CAT = "<all>", "<new>", "<rename>", "<delete>"
 LIBRARY_FOLDER = "physicallybased_MyLibrary"
 PRESET_PREFIX = "PxrSurface_"
 _RE_NUM = re.compile(r'blendAttr\s+"(\w+)"\s+([-+0-9.eE]+)\s*;')
@@ -1668,15 +1668,20 @@ if QtWidgets is not None:
             self.cat.setToolTip("Physically Based database categories")
             self.cat.currentIndexChanged.connect(self._filter)
             self.libcat = QtWidgets.QComboBox()
-            self.libcat.setToolTip("MyLibrary categories (subfolders of %s)\n"
-                                   "New, Rename and Delete category at the bottom of the menu."
-                                   % library_dir(create=False))
-            self._libcat_prev = 0
-            self.libcat.currentIndexChanged.connect(self._on_libcat_changed)
+            self.libcat.setToolTip("MyLibrary categories (subfolders of %s)" % library_dir(create=False))
+            self.libcat.currentIndexChanged.connect(self._filter)
+            self.hide_pb = QtWidgets.QCheckBox("Hide")
+            self.hide_pb.setToolTip("Hide the Physically Based materials")
+            self.hide_pb.toggled.connect(self._filter)
+            self.hide_lib = QtWidgets.QCheckBox("Hide")
+            self.hide_lib.setToolTip("Hide the MyLibrary presets")
+            self.hide_lib.toggled.connect(self._filter)
             grid.addWidget(QtWidgets.QLabel("Physically Based:"), 0, 0)
             grid.addWidget(self.cat, 0, 1)
+            grid.addWidget(self.hide_pb, 0, 2)
             grid.addWidget(QtWidgets.QLabel("MyLibrary:"), 1, 0)
             grid.addWidget(self.libcat, 1, 1)
+            grid.addWidget(self.hide_lib, 1, 2)
             grid.setColumnStretch(1, 1)
             left.addLayout(grid)
             self.list = QtWidgets.QListWidget()
@@ -1685,10 +1690,16 @@ if QtWidgets is not None:
             self.list.customContextMenuRequested.connect(self._list_menu)
             left.addWidget(self.list)
             row2 = QtWidgets.QHBoxLayout()
-            b_ref = QtWidgets.QPushButton("Refresh")
-            b_ref.clicked.connect(lambda: self.reload(True))
-            b_ref.setToolTip("Download the database again and rescan MyLibrary")
-            row2.addWidget(b_ref)
+            for label, action, tip in (("New Category", _NEW_CAT, "Create a MyLibrary category"),
+                                       ("Rename Category", _RENAME_CAT,
+                                        "Rename the category picked in the MyLibrary menu"),
+                                       ("Delete Category", _DELETE_CAT,
+                                        "Move the category picked in the MyLibrary menu, with its presets,\n"
+                                        "to the _trash subfolder of the library (recoverable)")):
+                b = QtWidgets.QPushButton(label)
+                b.setToolTip(tip)
+                b.clicked.connect(lambda *_, a=action: self._category_action(a))  # *_: Qt's checked flag
+                row2.addWidget(b)
             left.addLayout(row2)
             lay.addLayout(left, 1)
 
@@ -1844,21 +1855,10 @@ if QtWidgets is not None:
             combo.setCurrentIndex(idx if idx >= 0 else 0)
             combo.blockSignals(False)
 
-        def _on_libcat_changed(self, idx):
-            action = self.libcat.itemData(idx)
-            if action in (_NEW_CAT, _RENAME_CAT, _DELETE_CAT):
-                self.libcat.blockSignals(True)
-                self.libcat.setCurrentIndex(self._libcat_prev)
-                self.libcat.blockSignals(False)
-                QtCore.QTimer.singleShot(0, lambda: self._category_action(action))
-                return
-            self._libcat_prev = idx
-            self._filter()
-
         def _current_libcat(self):
             """The MyLibrary category picked in the menu, or "" (none, All or Hide)."""
             data = self.libcat.currentData()
-            return data if data not in (None, _ALL, _HIDE) else ""
+            return data if data not in (None, _ALL) else ""
 
         def _category_action(self, action):
             title = "MyLibrary categories"
@@ -1916,16 +1916,10 @@ if QtWidgets is not None:
                 print("[PB] Library unavailable: %s" % exc)
             self.materials = self.library + getattr(self, "pb_materials", [])
             cats = sorted({c for m in self.materials if not m.get("_library") for c in categories(m)})
-            self._fill_combo(self.cat, [("All categories", _ALL)] + [(c, c) for c in cats]
-                             + [None, ("Hide Physically Based", _HIDE)], self.cat.currentData())
+            self._fill_combo(self.cat, [("All categories", _ALL)] + [(c, c) for c in cats], self.cat.currentData())
             libcats = library_categories()
-            self._fill_combo(self.libcat, [("All MyLibrary", _ALL), ("No category", "")]
-                             + [(c, c) for c in libcats]
-                             + [None, ("Hide MyLibrary", _HIDE),
-                                None, ("New category…", _NEW_CAT), ("Rename category…", _RENAME_CAT),
-                                ("Delete category…", _DELETE_CAT)],
+            self._fill_combo(self.libcat, [("All categories", _ALL), ("No category", "")] + [(c, c) for c in libcats],
                              libcat if libcat is not None else self.libcat.currentData())
-            self._libcat_prev = self.libcat.currentIndex()
             self._filter()
             self.status.setText("%d materials, %d in MyLibrary" % (len(self.materials) - len(self.library), len(self.library)))
             self.status.setToolTip("MyLibrary folder: " + library_dir())
@@ -1945,9 +1939,9 @@ if QtWidgets is not None:
                 if txt and txt not in hay:
                     continue
                 if m.get("_library"):
-                    if lib_cat == _HIDE or (lib_cat not in (None, _ALL) and m.get("_libcat", "") != lib_cat):
+                    if self.hide_lib.isChecked() or (lib_cat not in (None, _ALL) and m.get("_libcat", "") != lib_cat):
                         continue
-                elif pb_cat == _HIDE or (pb_cat not in (None, _ALL) and pb_cat not in categories(m)):
+                elif self.hide_pb.isChecked() or (pb_cat not in (None, _ALL) and pb_cat not in categories(m)):
                     continue
                 it = QtWidgets.QListWidgetItem(m.get("name", "?"))
                 it.setData(QtCore.Qt.UserRole, m)
