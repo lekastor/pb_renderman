@@ -629,7 +629,7 @@ def build_pxr_values(mat, colorspace="acescg", sss_scale=DEFAULT_SSS_SCALE, roug
             if max(alb) > 0.0:
                 # without it the interior is single-scatter only: dense media (blood) go black
                 v["multiScatter"] = 1
-                notes.append("Interior: single scatter albedo %s, g0 %.3g, Multiscattering ON (not supported in XPU)"
+                notes.append("Interior: single scatter albedo %s, g0 %.3g, Multiscattering ON"
                              % (", ".join("%.3g" % x for x in alb), g0))
 
         radius = mat.get("subsurfaceRadius")
@@ -1617,14 +1617,15 @@ Otherwise the value on the left is used (glass: 0.001).</td></tr>
 Database coefficients are per cm: 1 for a scene in cm, 100 in meters.
 Raise it to exaggerate the tint on small objects.</td></tr>
 <tr><td><b>Non-directional (faster SSS / Glass Single Scatter)</b></td><td>Replace directional (forward)
-scattering by isotropic scattering. Similar look, much faster; works in XPU. Applies to the database
+scattering by isotropic scattering. Similar look, much faster. Applies to the database
 and to MyLibrary presets. Blood and coffee are always non-directional.</td></tr>
 <tr><td><b>Reset other attributes to defaults</b></td><td>Apply to Selected Materials: reset every attribute
 not driven by the database to its default first. Connected attributes (textures) are kept.</td></tr>
 </table>
 
 <h3>MyLibrary: your own presets</h3>
-<p>Stored in <code>%(lib)s</code>, shared by all Maya versions. Presets are applied exactly as
+<p>Stored in the <code>%(lib)s</code> folder of Maya's user folder (Documents/maya on Windows),
+shared by all Maya versions. Presets are applied exactly as
 saved; only <i>Non-directional</i> applies to them.</p>
 <ul>
 <li><b>Save Selected to MyLibrary…</b>: save the selected PxrSurface (or the one assigned to the
@@ -1642,15 +1643,14 @@ several in a row; Esc cancels. Your own .png or .jpg with the preset's name also
 
 <h3>Tips and limitations</h3>
 <ul>
-<li>Multiscattering is not supported in XPU: tick <i>Non-directional</i> for juices, beer, wine…</li>
 <li>The database does not state the unit of its volume coefficients (per cm assumed):
 use <i>Extinction scale</i> if a liquid looks off.</li>
-<li>The database is cached for a week in <code>%(cache)s</code>.</li>
+<li>The database is cached for a week in the <code>physicallybased_cache</code> folder, next to MyLibrary.</li>
 <li>Full documentation: README.txt next to the script, or <a href="%(home)s">%(home)s</a>.</li>
 </ul>
 """ % {"name": TOOL_NAME, "tagline": TOOL_TAGLINE, "db": DATABASE_URL, "rough": DEFAULT_SPEC_ROUGHNESS,
-       "sss": DEFAULT_SSS_SCALE, "lib": library_dir(create=False), "thumb": THUMBNAIL_SIZE,
-       "cache": _cache_path(), "home": HOMEPAGE}
+       "sss": DEFAULT_SSS_SCALE, "lib": LIBRARY_FOLDER, "thumb": THUMBNAIL_SIZE,
+       "home": HOMEPAGE}
 
 
 def about_html():
@@ -1804,7 +1804,7 @@ if QtWidgets is not None:
             self.cat.setToolTip("Physically Based database categories")
             self.cat.currentIndexChanged.connect(self._filter)
             self.libcat = QtWidgets.QComboBox()
-            self.libcat.setToolTip("MyLibrary categories (subfolders of %s)" % library_dir(create=False))
+            self.libcat.setToolTip("MyLibrary categories (subfolders of the MyLibrary folder)")
             self.libcat.currentIndexChanged.connect(self._filter)
             self.hide_pb = QtWidgets.QCheckBox("Hide")
             self.hide_pb.setToolTip("Hide the Physically Based materials")
@@ -1907,8 +1907,8 @@ if QtWidgets is not None:
             form.addRow(_ResetLabel("Extinction scale:", lambda: self.ext.setValue(1.0)), self.ext)
             self.reduce = QtWidgets.QCheckBox("Non-directional (faster SSS / Glass Single Scatter)")
             self.reduce.setToolTip("Replace directional (forward) scattering by isotropic scattering.\n"
-                                   "Similar look, much faster; works in XPU. Applies to the database\n"
-                                   "and to MyLibrary presets:\n"
+                                   "Similar look, much faster. Applies to the database and to MyLibrary\n"
+                                   "presets:\n"
                                    " - Glass interior with g0 > 0 (blood, coffee, juices...): g0 = 0 with\n"
                                    "   reduced scattering sigma_s * (1 - g0), extinction and albedo recomputed.\n"
                                    " - Subsurface: Directionality = 0 (skin: instead of 0.8).")
@@ -1941,7 +1941,7 @@ if QtWidgets is not None:
             right.addLayout(brow)
             self.save_btn = QtWidgets.QPushButton("Save Selected to MyLibrary…")
             self.save_btn.setToolTip("Save the selected PxrSurface (or the one assigned to the selected object)\n"
-                                     "as a preset in MyLibrary (" + library_dir(create=False) + "),\n"
+                                     "as a preset in MyLibrary,\n"
                                      "in the category picked in the MyLibrary menu.\n"
                                      "Tip: put a .jpg or .png with the same name next to the .mel\n"
                                      "to get a preview.")
@@ -2106,7 +2106,6 @@ if QtWidgets is not None:
                              libcat if libcat is not None else self.libcat.currentData())
             self._filter()
             self.status.setText("%d materials, %d in MyLibrary" % (len(self.materials) - len(self.library), len(self.library)))
-            self.status.setToolTip("MyLibrary folder: " + library_dir())
             if select:
                 wanted = select if isinstance(select, (list, tuple)) else [select]
                 first = None
@@ -2137,7 +2136,8 @@ if QtWidgets is not None:
                 it.setData(QtCore.Qt.UserRole, m)
                 if m.get("_library"):
                     f = it.font(); f.setBold(True); it.setFont(f)
-                    it.setToolTip("MyLibrary%s: %s" % (" / " + m["_libcat"] if m.get("_libcat") else "", m["_path"]))
+                    it.setToolTip("MyLibrary%s: %s" % (" / " + m["_libcat"] if m.get("_libcat") else "",
+                                                       os.path.basename(m["_path"])))
                 col = preset_swatch(m["_attrs"]) if m.get("_library") else pick_color(m.get("color"), self.cs.currentText())
                 if col:
                     pm = QtGui.QPixmap(14, 14)

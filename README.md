@@ -73,7 +73,7 @@ The **MyLibrary** category lists your own PxrSurface presets, stored in their ow
 | Database value if meaningful | on | Uses the database roughness when it is not 0 or 0.5 (generic placeholders), e.g. brick 1.0, paper 0.8. |
 | SSS scale | 10 | Multiplier on the database subsurface radius (mm) → `subsurfaceDmfp`. |
 | Extinction scale | 1 | Multiplier on interior extinction. Coefficients are treated as per cm: 1 for a scene in cm, 100 in meters. |
-| Non-directional (faster SSS / Glass Single Scatter) | off | Replaces directional scattering by isotropic scattering: reduced scattering with `g` = 0 in the glass interior, Directionality 0 for subsurface and single scatter. Similar look, much faster, works in XPU. Also applies to MyLibrary presets (the files are not changed). |
+| Non-directional (faster SSS / Glass Single Scatter) | off | Replaces directional scattering by isotropic scattering: reduced scattering with `g` = 0 in the glass interior, Directionality 0 for subsurface and single scatter. Similar look, much faster. Also applies to MyLibrary presets (the files are not changed). |
 | Reset other attributes to defaults | on | *Apply* only: resets every unconnected attribute to its default before applying. |
 
 Click an option's name to reset it to its default value; right-click a checkbox for the same.
@@ -111,7 +111,6 @@ Blood and coffee are always rendered non-directional: they are dense and strongl
 
 ## Known limitations
 
-- **Multiscattering is not supported in XPU.** Scattering media rendered in directional mode (juices, beer, wine) can render too dark in XPU; tick *Non-directional (faster SSS / Glass Single Scatter)*.
 - **Volume units are inferred.** The database does not state the unit of its volume coefficients. Per cm matches the measured absorption of water and the glass/water/ice depths, but some liquids look about ten times off. Use *Extinction scale* to adjust.
 - **RenderMan's built-in metal presets are defined in linear sRGB** and are not converted for ACEScg scenes, so they will differ slightly from this tool in an ACEScg scene. This tool's values are the color-managed ones.
 - Per-channel (RGB) n, k and volume coefficients are an approximation of spectral data.
