@@ -1111,6 +1111,7 @@ def render_library_thumbnail(entry):
     import rfm2.ui.assets_browser as rab
     import rman_utils.rman_assets.lib as ral
     from rman_utils.rman_assets.core import RmanAsset, FilePath
+    from rman_utils.rman_assets.common.external_files import Storage
 
     tmpdir = tempfile.mkdtemp(prefix="pb_thumb_")
     undo_state = cmds.undoInfo(query=True, stateWithoutFlush=True)
@@ -1122,7 +1123,9 @@ def render_library_thumbnail(entry):
         cmds.connectAttr(shader + ".outColor", sg + ".surfaceShader", force=True)
         _apply_preset([shader], entry, [])
 
-        asset = RmanAsset(assetType="nodeGraph", label=entry["name"], previewType="std")
+        # dependencies (textures) are stored with the temporary asset, like a Preset Browser export
+        asset = RmanAsset(assetType="nodeGraph", label=entry["name"], previewType="std",
+                          storage=Storage(Storage.k_asset, asset_path=tmpdir))
         try:                                          # same color config as the Preset Browser
             import rfm2.ui.maya_color_manager as mcm
             mgr = mcm.color_manager()
