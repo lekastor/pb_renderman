@@ -1226,6 +1226,7 @@ THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
 THUMBNAIL_PIXEL_VARIANCE = 0.02   # Preset Browser: 0.01
 THUMBNAIL_HDR = "Annecy"          # RenderMan factory environment map lighting the thumbnails
 THUMBNAIL_HDR_ROTATE_Y = 90.0     # degrees, around the world Y axis (as Maya's rotateY)
+THUMBNAIL_DOME_EXPOSURE = 0.5     # stops added to the dome light's exposure
 
 
 def thumbnail_hdris():
@@ -1278,6 +1279,17 @@ def _ocio_display_args(asset):
         sets.append(base + ["--ociodisplay", display, view])
     sets.append(base + ["--ociodisplay", "", ""])          # config defaults
     return sets
+
+
+def _expose_light_rib(rib, stops):
+    """Adds stops to the dome light's exposure (inserts the parameter if absent)."""
+    if not stops:
+        return rib
+    new, n = re.subn(r'("float exposure"\s*)\[\s*([-+0-9.eE]+)\s*\]',
+                     lambda m: "%s[%g]" % (m.group(1), float(m.group(2)) + stops), rib, count=1)
+    if n:
+        return new
+    return re.sub(r'(Light\s+"PxrDomeLight"\s+"[^"]*")', r'\g<1> "float exposure" [%g]' % stops, rib, count=1)
 
 
 def _rotate_light_rib(rib, degrees):
@@ -1441,7 +1453,7 @@ def render_library_thumbnail(entry):
             with open(scene.join("m_lightrig_envMap.rib").os_path(), "r") as f:
                 light_rib = f.read()
         with open(scene.join("m_lightrig_envMap.rib").os_path(), "w") as f:
-            f.write(_rotate_light_rib(light_rib, THUMBNAIL_HDR_ROTATE_Y))
+            f.write(_expose_light_rib(_rotate_light_rib(light_rib, THUMBNAIL_HDR_ROTATE_Y), THUMBNAIL_DOME_EXPOSURE))
 
         # 3. higher resolution and more samples than the Preset Browser
         with open(ribfile.os_path(), "r") as f:
