@@ -95,8 +95,8 @@ folders:
   Presets menu.
 - Right-click a MyLibrary preset in the list: Rename..., Render Thumbnail or
   Delete.... Renaming also renames its preview image.
-- "Delete from MyLibrary..." moves the selected preset (and its preview
-  image) to the _trash subfolder of the library, so it can be restored.
+- "Delete..." (right-click) moves the preset (and its preview image) to
+  the _trash subfolder of the library, so it can be restored.
 - "Render Thumbnail" renders the selected preset in RenderMan's own
   Preset Browser preview scene (same scene and renderer, lit by
   RenderMan's factory Annecy HDRI), at 256 px (the browser renders 128 px)

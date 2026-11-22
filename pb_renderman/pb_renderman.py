@@ -1528,7 +1528,7 @@ if QtWidgets is not None:
             left.addLayout(row)
             self.list = QtWidgets.QListWidget()
             self.list.currentItemChanged.connect(self._on_select)
-            self.list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+            self.list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)  # MyLibrary: Rename / Thumbnail / Delete
             self.list.customContextMenuRequested.connect(self._list_menu)
             left.addWidget(self.list)
             row2 = QtWidgets.QHBoxLayout()
@@ -1643,11 +1643,6 @@ if QtWidgets is not None:
                                      "Tip: put a .jpg or .png with the same name next to the .mel\n"
                                      "to get a preview.")
             self.save_btn.clicked.connect(lambda *_: self._save_library())
-            self.delete_btn = QtWidgets.QPushButton("Delete from MyLibrary…")
-            self.delete_btn.setToolTip("Move the selected MyLibrary preset to the _trash subfolder\n"
-                                       "of the library (recoverable).")
-            self.delete_btn.setEnabled(False)
-            self.delete_btn.clicked.connect(lambda *_: self._delete_library())
             self.thumb_btn = QtWidgets.QPushButton("Render Thumbnail")
             self.thumb_btn.setToolTip("Render the selected MyLibrary preset with the RenderMan\n"
                                       "Preset Browser preview scene (%d px), saved next to the .mel." % THUMBNAIL_SIZE)
@@ -1656,7 +1651,6 @@ if QtWidgets is not None:
             lrow = QtWidgets.QHBoxLayout()
             lrow.addWidget(self.save_btn)
             lrow.addWidget(self.thumb_btn)
-            lrow.addWidget(self.delete_btn)
             right.addLayout(lrow)
             self.status = QtWidgets.QLabel("")
             right.addWidget(self.status)
@@ -1736,7 +1730,6 @@ if QtWidgets is not None:
                 return
             m = item.data(QtCore.Qt.UserRole)
             cs = self.cs.currentText()
-            self.delete_btn.setEnabled(bool(m.get("_library")))
             self.thumb_btn.setEnabled(bool(m.get("_library")))
             if m.get("_library"):
                 self._show_preset(m)
