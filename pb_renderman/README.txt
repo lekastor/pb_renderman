@@ -95,6 +95,9 @@ folders:
   Maya's attribute-preset format (.mel), so you can also copy one into
   Maya's own preset folder if you want it in the Attribute Editor's
   Presets menu.
+- "Update Selected to MyLibrary..." overwrites the preset picked in the
+  list with the selected PxrSurface, keeping its name, category and
+  thumbnail file (render the thumbnail again to refresh it).
 - Categories: the "New Category", "Rename Category" and "Delete Category"
   buttons under the list manage them (Rename and Delete act on the category
   picked in the MyLibrary menu). A category is a

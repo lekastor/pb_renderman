@@ -1490,11 +1490,11 @@ def render_library_thumbnail(entry):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def save_to_library(shader, name, libcat=""):
+def save_to_library(shader, name, libcat="", path=None):
     """
     Saves every numeric and string attribute of the shader as a preset file
     (Maya attribute-preset format) in the library folder, or in its libcat
-    category subfolder. Returns the path.
+    category subfolder, or at path (update of an existing preset). Returns the path.
     """
     from maya import cmds
     stem = preset_file_name(name)
@@ -1516,8 +1516,9 @@ def save_to_library(shader, name, libcat=""):
         except Exception:
             continue
     lines.append("endAttrPreset();")
-    path = os.path.join(library_dir(), libcat, stem + ".mel") if libcat else \
-        os.path.join(library_dir(), stem + ".mel")
+    if not path:
+        path = os.path.join(library_dir(), libcat, stem + ".mel") if libcat else \
+            os.path.join(library_dir(), stem + ".mel")
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines) + "\n")
     return path
@@ -1808,6 +1809,12 @@ if QtWidgets is not None:
                                      "Tip: put a .jpg or .png with the same name next to the .mel\n"
                                      "to get a preview.")
             self.save_btn.clicked.connect(lambda *_: self._save_library())
+            self.update_btn = QtWidgets.QPushButton("Update Selected to MyLibrary…")
+            self.update_btn.setToolTip("Overwrite the MyLibrary preset picked in the list with the selected\n"
+                                       "PxrSurface (or the one assigned to the selected object).\n"
+                                       "Name, category and thumbnail files are kept.")
+            self.update_btn.setEnabled(False)
+            self.update_btn.clicked.connect(lambda *_: self._update_library())
             self.thumb_btn = QtWidgets.QPushButton("Render Thumbnail")
             self.thumb_btn.setToolTip("Render the selected MyLibrary preset with the RenderMan\n"
                                       "Preset Browser preview scene (%d px), saved next to the .mel." % THUMBNAIL_SIZE)
@@ -1815,6 +1822,7 @@ if QtWidgets is not None:
             self.thumb_btn.clicked.connect(lambda *_: self._render_thumbnail())
             lrow = QtWidgets.QHBoxLayout()
             lrow.addWidget(self.save_btn)
+            lrow.addWidget(self.update_btn)
             lrow.addWidget(self.thumb_btn)
             right.addLayout(lrow)
             self.status = QtWidgets.QLabel("")
@@ -1918,7 +1926,7 @@ if QtWidgets is not None:
             cats = sorted({c for m in self.materials if not m.get("_library") for c in categories(m)})
             self._fill_combo(self.cat, [("All categories", _ALL)] + [(c, c) for c in cats], self.cat.currentData())
             libcats = library_categories()
-            self._fill_combo(self.libcat, [("All categories", _ALL), ("No category", "")] + [(c, c) for c in libcats],
+            self._fill_combo(self.libcat, [("All categories", _ALL)] + [(c, c) for c in libcats],
                              libcat if libcat is not None else self.libcat.currentData())
             self._filter()
             self.status.setText("%d materials, %d in MyLibrary" % (len(self.materials) - len(self.library), len(self.library)))
@@ -1962,6 +1970,7 @@ if QtWidgets is not None:
             m = item.data(QtCore.Qt.UserRole)
             cs = self.cs.currentText()
             self.thumb_btn.setEnabled(bool(m.get("_library")))
+            self.update_btn.setEnabled(bool(m.get("_library")))
             if m.get("_library"):
                 self._show_preset(m)
                 return
@@ -2124,6 +2133,36 @@ if QtWidgets is not None:
             print("[PB] Deleted %s -> %s" % (m["_path"], trash))
             self._rebuild()
             self.status.setText("Deleted from MyLibrary: %s (in _trash)" % m["name"])
+
+        def _update_library(self):
+            item = self.list.currentItem()
+            m = item.data(QtCore.Qt.UserRole) if item else None
+            if not m or not m.get("_library"):
+                self.status.setText("Pick the MyLibrary preset to update in the list.")
+                return
+            try:
+                shader = selected_pxrsurface()
+            except Exception as exc:
+                self.status.setText("Error: %s" % exc)
+                return
+            if not shader:
+                self.status.setText("Select a PxrSurface (or an object using one) to update the preset with.")
+                return
+            short = shader.split("|")[-1]
+            answer = QtWidgets.QMessageBox.question(
+                self, "Update MyLibrary preset",
+                "Overwrite the preset '%s' with %s?" % (m["name"], short))
+            if answer != QtWidgets.QMessageBox.Yes:
+                return
+            try:
+                path = save_to_library(shader, m["name"], path=m["_path"])
+            except Exception as exc:
+                self.status.setText("Error: %s" % exc)
+                raise
+            print("[PB] Updated %s from %s" % (path, short))
+            self._rebuild(select=path)
+            self.status.setText("Updated: %s%s" % (m["name"], " (Render Thumbnail to refresh its preview)"
+                                                   if m.get("_image") else ""))
 
         def _save_library(self):
             try:

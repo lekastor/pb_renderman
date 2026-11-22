@@ -57,6 +57,7 @@ The **MyLibrary** category lists your own PxrSurface presets, stored in their ow
 
 - They are applied exactly as saved, with the same two buttons. Only *Non-directional (faster SSS / Glass Single Scatter)* applies to them; the other options do not.
 - **Save Selected to MyLibrary…** saves the selected PxrSurface (or the one assigned to the selected object) as a new preset. The files use Maya's attribute-preset format (`.mel`), so you can also copy one into Maya's own preset folder if you want it in the Attribute Editor's *Presets* menu.
+- **Update Selected to MyLibrary…** overwrites the preset picked in the list with the selected PxrSurface, keeping its name, category and thumbnail file (render the thumbnail again to refresh it).
 - **Categories**: the *New Category*, *Rename Category* and *Delete Category* buttons under the list manage them (Rename and Delete act on the category picked in the MyLibrary menu). A category is a subfolder of the library; deleting one moves it, with its presets, to `_trash`. New presets are saved in the category picked in the menu.
 - **Right-click a MyLibrary preset** in the list: Rename…, Render Thumbnail, Move to category or Delete…. Renaming and moving also take its preview image.
 - **Delete…** (right-click) moves the preset (and its preview image) to the `_trash` subfolder of the library, so it can be restored.
