@@ -1098,7 +1098,8 @@ def delete_from_library(entry):
     return trash
 
 
-THUMBNAIL_SIZE = 300              # rendered resolution (Preset Browser: 128 px)
+THUMBNAIL_SIZE = 256              # rendered resolution (Preset Browser: 128 px), shown 1:1
+THUMBNAIL_DOME_EXPOSURE = 1.0     # stops added to the preview dome light
 THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
 THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
 THUMBNAIL_PIXEL_VARIANCE = 0.05   # Preset Browser: 0.01
@@ -1195,6 +1196,17 @@ def render_library_thumbnail(entry):
         ral._writeDisplayChannelRIB(asset, ribfile)
         ral._writeDisplayFilterRIB(asset, scene)
         ral._writeLightRIB(asset, scene, hdr=ral.previewHdrAsset(ral.getPreviewHdrIdx()))
+        light_rib = scene.join("m_lightrig_envMap.rib").os_path()
+        with open(light_rib, "r") as f:
+            lrib = f.read()
+        if re.search(r'"float exposure"\s*\[', lrib):
+            lrib = re.sub(r'("float exposure"\s*)\[\s*([-+0-9.eE]+)\s*\]',
+                          lambda m: '%s[%g]' % (m.group(1), float(m.group(2)) + THUMBNAIL_DOME_EXPOSURE), lrib)
+        else:
+            lrib = re.sub(r'(Light\s+"PxrDomeLight"\s+"[^"]*")',
+                          r'\g<1> "float exposure" [%g]' % THUMBNAIL_DOME_EXPOSURE, lrib)
+        with open(light_rib, "w") as f:
+            f.write(lrib)
 
         # 3. higher resolution and more samples than the Preset Browser
         with open(ribfile.os_path(), "r") as f:
@@ -1544,7 +1556,7 @@ if QtWidgets is not None:
             self.delete_btn.clicked.connect(lambda *_: self._delete_library())
             self.thumb_btn = QtWidgets.QPushButton("Render Thumbnail")
             self.thumb_btn.setToolTip("Render the selected MyLibrary preset with the RenderMan\n"
-                                      "Preset Browser preview scene (300 px), saved next to the .mel.")
+                                      "Preset Browser preview scene (256 px), saved next to the .mel.")
             self.thumb_btn.setEnabled(False)
             self.thumb_btn.clicked.connect(lambda *_: self._render_thumbnail())
             lrow = QtWidgets.QHBoxLayout()
@@ -1653,6 +1665,13 @@ if QtWidgets is not None:
             self.info.setHtml("<br>".join(rows))
             self._load_image(m)
 
+        def _set_preview(self, pm):
+            """Shows an image 1:1, only scaled down (never stretched) to fit the 256 px box."""
+            box = self.preview.width()
+            if pm.width() > box or pm.height() > box:
+                pm = pm.scaled(box, box, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            self.preview.setPixmap(pm)
+
         def _show_preset(self, m):
             a, cs = m["_attrs"], self.cs.currentText()
             col = preset_swatch(a)
@@ -1701,8 +1720,7 @@ if QtWidgets is not None:
             if m.get("_image"):
                 pm = QtGui.QPixmap(m["_image"])
                 if not pm.isNull():
-                    self.preview.setPixmap(pm.scaled(256, 256, QtCore.Qt.KeepAspectRatio,
-                                                     QtCore.Qt.SmoothTransformation))
+                    self._set_preview(pm)
                     return
             self.preview.setText("MyLibrary\n\nNo thumbnail yet:\nclick Render Thumbnail")
 
@@ -1812,7 +1830,7 @@ if QtWidgets is not None:
             self._img_cache[name] = data
             pm = QtGui.QPixmap()
             pm.loadFromData(data)
-            self.preview.setPixmap(pm.scaled(256, 256, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+            self._set_preview(pm)
 
         def _roughness(self):
             return self.rough.value()
