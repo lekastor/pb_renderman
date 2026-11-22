@@ -1099,8 +1099,8 @@ def delete_from_library(entry):
 
 
 THUMBNAIL_SIZE = 256              # rendered resolution (Preset Browser: 128 px), shown 1:1
-THUMBNAIL_HDR = "Luxo_jr"         # default HDRI (any name from thumbnail_hdris()), changeable in the UI
-_HDR_OPTIONVAR = "pbRendermanThumbnailHDR"
+THUMBNAIL_HDR = "Annecy"          # RenderMan factory environment map lighting the thumbnails
+THUMBNAIL_HDR_ROTATE_Y = -90.0    # degrees, around the world Y axis (as Maya's rotateY)
 
 
 def thumbnail_hdris():
@@ -1131,24 +1131,6 @@ def thumbnail_hdris():
     return found
 
 
-def get_thumbnail_hdr():
-    try:
-        from maya import cmds
-        if cmds.optionVar(exists=_HDR_OPTIONVAR):
-            return cmds.optionVar(query=_HDR_OPTIONVAR)
-    except Exception:
-        pass
-    return THUMBNAIL_HDR
-
-
-def set_thumbnail_hdr(name):
-    from maya import cmds
-    cmds.optionVar(stringValue=(_HDR_OPTIONVAR, name))
-THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
-THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
-THUMBNAIL_PIXEL_VARIANCE = 0.05   # Preset Browser: 0.01
-
-
 def _ocio_display_args(asset):
     """
     rmanoiiotool argument sets converting the render (rendering space) for display,
@@ -1173,7 +1155,25 @@ def _ocio_display_args(asset):
     return sets
 
 
-def render_library_thumbnail(entry, hdr=None):
+def _rotate_light_rib(rib, degrees):
+    """Rotates the dome light around the world Y axis (Maya rotateY convention)."""
+    if not degrees:
+        return rib
+    c, si = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
+    ry = [[c, 0, -si, 0], [0, 1, 0, 0], [si, 0, c, 0], [0, 0, 0, 1]]   # row-vector matrix, as RIB
+
+    def concat(match):
+        v = [float(x) for x in match.group(1).split()]
+        m = [v[i * 4:i * 4 + 4] for i in range(4)]
+        out = [[sum(m[i][k] * ry[k][j] for k in range(4)) for j in range(4)] for i in range(4)]
+        return "Transform [ %s ]" % " ".join("%.6g" % (0.0 if abs(x) < 1e-9 else x) for row in out for x in row)
+    new, n = re.subn(r"Transform\s*\[\s*((?:[-+0-9.eE]+\s+){15}[-+0-9.eE]+)\s*\]", concat, rib, count=1)
+    if n:
+        return new
+    return re.sub(r'(\n\s*)(Light\s+"PxrDomeLight")', r'\1Rotate %g 0 1 0\1\2' % degrees, rib, count=1)
+
+
+def render_library_thumbnail(entry):
     """
     Renders a MyLibrary preset in the RenderMan Preset Browser preview scene
     (same scene, lighting and renderer), at THUMBNAIL_SIZE px with more samples,
@@ -1246,18 +1246,20 @@ def render_library_thumbnail(entry, hdr=None):
         ral._writeConfigRIB(scene, FilePath(rmantree), FilePath(os.environ.get("RMSTREE", "")), matdir, "std")
         ral._writeDisplayChannelRIB(asset, ribfile)
         ral._writeDisplayFilterRIB(asset, scene)
-        # light rig: any envMap asset (preview rigs or factory library), written as
-        # the Preset Browser does it for its own rigs
-        hdr = hdr or get_thumbnail_hdr()
+        # light rig: a RenderMan factory environment map, written as the Preset Browser
+        # writes its own preview rigs, then rotated
         hdris = thumbnail_hdris()
-        if hdr in hdris:
+        if THUMBNAIL_HDR in hdris:
             rig = RmanAsset()
-            rig.load(FilePath(hdris[hdr]))
-            with open(scene.join("m_lightrig_envMap.rib").os_path(), "w") as f:
-                f.write(rig.getRIB())
+            rig.load(FilePath(hdris[THUMBNAIL_HDR]))
+            light_rib = rig.getRIB()
         else:
-            print("[PB] HDRI '%s' not found, using the Preset Browser's." % hdr)
+            print("[PB] HDRI '%s' not found, using the Preset Browser's." % THUMBNAIL_HDR)
             ral._writeLightRIB(asset, scene, hdr=ral.previewHdrAsset(ral.getPreviewHdrIdx()))
+            with open(scene.join("m_lightrig_envMap.rib").os_path(), "r") as f:
+                light_rib = f.read()
+        with open(scene.join("m_lightrig_envMap.rib").os_path(), "w") as f:
+            f.write(_rotate_light_rib(light_rib, THUMBNAIL_HDR_ROTATE_Y))
 
         # 3. higher resolution and more samples than the Preset Browser
         with open(ribfile.os_path(), "r") as f:
@@ -1570,20 +1572,6 @@ if QtWidgets is not None:
             self.reduce.toggled.connect(lambda *_: self._on_select(self.list.currentItem()))
             _checkbox_reset_menu(self.reduce, False)
             form.addRow(self.reduce)
-            self.hdr = QtWidgets.QComboBox()
-            self.hdr.setToolTip("HDRI lighting the MyLibrary thumbnails: the Preset Browser's\n"
-                                "preview rigs and the factory library environment maps.")
-            try:
-                if not os.environ.get("RMANTREE"):
-                    _ensure_renderman()
-                names = sorted(thumbnail_hdris(), key=str.lower)
-            except Exception:
-                names = []
-            self.hdr.addItems(names or [THUMBNAIL_HDR])
-            current = get_thumbnail_hdr()
-            self.hdr.setCurrentText(current if current in names else THUMBNAIL_HDR)
-            self.hdr.currentTextChanged.connect(lambda name: set_thumbnail_hdr(name))
-            form.addRow(_ResetLabel("Thumbnail HDRI:", lambda: self.hdr.setCurrentText(THUMBNAIL_HDR)), self.hdr)
             self.reset_cb = QtWidgets.QCheckBox("Reset other attributes to defaults")
             self.reset_cb.setChecked(True)
             self.reset_cb.setToolTip("Apply to Selected Materials: reset every attribute not driven by the\n"
@@ -1796,10 +1784,10 @@ if QtWidgets is not None:
             if not entry or not entry.get("_library"):
                 self.status.setText("Pick a MyLibrary preset first.")
                 return
-            self.status.setText("Rendering thumbnail: %s (%s)…" % (entry["name"], self.hdr.currentText()))
+            self.status.setText("Rendering thumbnail: %s…" % entry["name"])
             QtWidgets.QApplication.processEvents()
             try:
-                path = render_library_thumbnail(entry, self.hdr.currentText())
+                path = render_library_thumbnail(entry)
             except Exception as exc:
                 self.status.setText("Thumbnail failed: %s" % exc)
                 raise
