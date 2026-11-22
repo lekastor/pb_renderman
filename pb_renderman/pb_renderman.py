@@ -1100,6 +1100,7 @@ def delete_from_library(entry):
 
 THUMBNAIL_SIZE = 256              # rendered resolution (Preset Browser: 128 px), shown 1:1
 THUMBNAIL_DOME_EXPOSURE = 1.0     # stops added to the preview dome light
+THUMBNAIL_HDR = "Luxo_jr"         # Preset Browser light rigs: "Winter_forest" (default) or "Luxo_jr"
 THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
 THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
 THUMBNAIL_PIXEL_VARIANCE = 0.05   # Preset Browser: 0.01
@@ -1195,7 +1196,7 @@ def render_library_thumbnail(entry):
         ral._writeConfigRIB(scene, FilePath(rmantree), FilePath(os.environ.get("RMSTREE", "")), matdir, "std")
         ral._writeDisplayChannelRIB(asset, ribfile)
         ral._writeDisplayFilterRIB(asset, scene)
-        ral._writeLightRIB(asset, scene, hdr=ral.previewHdrAsset(ral.getPreviewHdrIdx()))
+        ral._writeLightRIB(asset, scene, hdr=THUMBNAIL_HDR)
         light_rib = scene.join("m_lightrig_envMap.rib").os_path()
         with open(light_rib, "r") as f:
             lrib = f.read()
