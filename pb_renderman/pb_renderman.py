@@ -1823,8 +1823,8 @@ if QtWidgets is not None:
             lrow = QtWidgets.QHBoxLayout()
             lrow.addWidget(self.save_btn)
             lrow.addWidget(self.update_btn)
-            lrow.addWidget(self.thumb_btn)
             right.addLayout(lrow)
+            right.addWidget(self.thumb_btn)      # own row: keeps the window narrow
             self.status = QtWidgets.QLabel("")
             right.addWidget(self.status)
             lay.addLayout(right, 1)
