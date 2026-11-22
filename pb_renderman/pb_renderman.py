@@ -1229,6 +1229,10 @@ PREVIEW_BOX = 256                 # UI preview area: images shown 1:1, larger on
 THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
 THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
 THUMBNAIL_PIXEL_VARIANCE = 0.02   # Preset Browser: 0.01
+# Draft quality (checkbox next to Render Thumbnail): same size and lighting, far fewer samples
+THUMBNAIL_DRAFT_MIN_SAMPLES = 4
+THUMBNAIL_DRAFT_MAX_SAMPLES = 64
+THUMBNAIL_DRAFT_PIXEL_VARIANCE = 0.1
 THUMBNAIL_HDR = "Annecy"          # RenderMan factory environment map lighting the thumbnails
 THUMBNAIL_HDR_ROTATE_Y = 90.0     # degrees, around the world Y axis (as Maya's rotateY)
 THUMBNAIL_DOME_EXPOSURE = 0.5     # stops added to the dome light's exposure
@@ -1373,7 +1377,7 @@ def _run_with_progress(cmd, title, startupinfo=None):
     return "\n".join(log)
 
 
-def render_library_thumbnail(entry, label=""):
+def render_library_thumbnail(entry, label="", draft=False):
     """
     Renders a MyLibrary preset in the RenderMan Preset Browser preview scene
     (same scene, lighting and renderer), at THUMBNAIL_SIZE px with more samples,
@@ -1465,9 +1469,13 @@ def render_library_thumbnail(entry, label=""):
             rib = f.read()
         rib = re.sub(r'("int\[2\] FormatResolution"\s*)\[\s*\d+\s+\d+\s*\]',
                      r'\g<1>[%d %d]' % (THUMBNAIL_SIZE, THUMBNAIL_SIZE), rib)
-        rib = re.sub(r'("int maxsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % THUMBNAIL_MAX_SAMPLES, rib)
-        rib = re.sub(r'("int minsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % THUMBNAIL_MIN_SAMPLES, rib)
-        rib = re.sub(r'("float PixelVariance"\s*)\[[^\]]*\]', r'\g<1>[%g]' % THUMBNAIL_PIXEL_VARIANCE, rib)
+        if draft:
+            smin, smax, pv = THUMBNAIL_DRAFT_MIN_SAMPLES, THUMBNAIL_DRAFT_MAX_SAMPLES, THUMBNAIL_DRAFT_PIXEL_VARIANCE
+        else:
+            smin, smax, pv = THUMBNAIL_MIN_SAMPLES, THUMBNAIL_MAX_SAMPLES, THUMBNAIL_PIXEL_VARIANCE
+        rib = re.sub(r'("int maxsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % smax, rib)
+        rib = re.sub(r'("int minsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % smin, rib)
+        rib = re.sub(r'("float PixelVariance"\s*)\[[^\]]*\]', r'\g<1>[%g]' % pv, rib)
         with open(ribfile.os_path(), "w") as f:
             f.write(rib)
 
@@ -1637,7 +1645,7 @@ Delete act on the category picked in the MyLibrary menu.</li>
 <li><b>Right-click a preset</b>: Rename…, Render Thumbnail, Move to category, Delete….</li>
 <li><b>Render Thumbnail</b>: render the selected presets with the RenderMan Preset Browser
 preview scene (%(thumb)d px), saved next to the .mel. Ctrl / Shift-click in the list to render
-several in a row; Esc cancels. Your own .png or .jpg with the preset's name also works.</li>
+several in a row; Esc cancels. <b>Draft quality</b>: faster, noisier thumbnails. Your own .png or .jpg with the preset's name also works.</li>
 <li>Deleted presets and categories go to the <code>_trash</code> subfolder and can be restored.</li>
 </ul>
 
@@ -1962,7 +1970,17 @@ if QtWidgets is not None:
             lrow.addWidget(self.save_btn)
             lrow.addWidget(self.update_btn)
             right.addLayout(lrow)
-            right.addWidget(self.thumb_btn)      # own row: keeps the window narrow
+            self.draft_cb = QtWidgets.QCheckBox("Draft quality")
+            self.draft_cb.setToolTip("Faster, noisier thumbnails: %d-%d samples, pixel variance %g\n"
+                                     "(full quality: %d-%d samples, pixel variance %g)."
+                                     % (THUMBNAIL_DRAFT_MIN_SAMPLES, THUMBNAIL_DRAFT_MAX_SAMPLES,
+                                        THUMBNAIL_DRAFT_PIXEL_VARIANCE, THUMBNAIL_MIN_SAMPLES,
+                                        THUMBNAIL_MAX_SAMPLES, THUMBNAIL_PIXEL_VARIANCE))
+            _checkbox_reset_menu(self.draft_cb, False)
+            trow = QtWidgets.QHBoxLayout()      # own row: keeps the window narrow
+            trow.addWidget(self.thumb_btn, 1)
+            trow.addWidget(self.draft_cb)
+            right.addLayout(trow)
             self.status = QtWidgets.QLabel("")
             right.addWidget(self.status)
             lay.addLayout(right, 1)
@@ -2255,7 +2273,7 @@ if QtWidgets is not None:
                 self.status.setText("Rendering thumbnail %s: %s…" % (label, e["name"]))
                 QtWidgets.QApplication.processEvents()
                 try:
-                    path = render_library_thumbnail(e, label)
+                    path = render_library_thumbnail(e, label, draft=self.draft_cb.isChecked())
                 except RenderCancelled:
                     self.status.setText("Thumbnails cancelled after %d of %d." % (len(done), n))
                     break

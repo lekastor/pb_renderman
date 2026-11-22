@@ -114,7 +114,8 @@ folders:
   renders 128 px) with up to 512 samples, converted to Maya's display/view
   transform, and saves it next to the .mel as a .png. Ctrl / Shift-click
   several presets to render their thumbnails one after the other (Esc
-  cancels). You can also use
+  cancels). Tick "Draft quality" for faster, noisier thumbnails (4-64
+  samples, pixel variance 0.1). You can also use
   your own .png or .jpg with the same name as the .mel.
 - MyLibrary is available even when the database cannot be downloaded.
 
