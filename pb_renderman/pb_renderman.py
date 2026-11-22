@@ -1099,7 +1099,6 @@ def delete_from_library(entry):
 
 
 THUMBNAIL_SIZE = 256              # rendered resolution (Preset Browser: 128 px), shown 1:1
-THUMBNAIL_DOME_EXPOSURE = 1.0     # stops added to the preview dome light
 THUMBNAIL_HDR = "Luxo_jr"         # Preset Browser light rigs: "Winter_forest" (default) or "Luxo_jr"
 THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
 THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
@@ -1149,8 +1148,10 @@ def render_library_thumbnail(entry):
     from rman_utils.rman_assets.common.external_files import Storage
     from rman_utils.rman_assets.common.utils import app, startup_info
 
+    # RenderMan's install locations come from its own environment variables,
+    # so the thumbnails follow whatever RenderMan version is loaded.
     rmantree = os.environ.get("RMANTREE")
-    if not rmantree:
+    if not rmantree or not os.path.isdir(rmantree):
         raise RuntimeError("RMANTREE is not set: is RenderMan for Maya loaded?")
     rmanbin = os.path.join(rmantree, "bin")
     tmpdir = tempfile.mkdtemp(prefix="pb_thumb_")
@@ -1191,23 +1192,22 @@ def render_library_thumbnail(entry):
         # 2. the Preset Browser preview scene, in its own folder
         scene = FilePath(os.path.join(tmpdir, "scene"))
         shutil.copytree(ral.ribPath(None).os_path(), scene.os_path())
-        ribfile = scene.join("materialSample_v1.1.rib")
+        # the scene file name carries a version (materialSample_v1.1.rib in RenderMan 27)
+        candidates = sorted(f for f in os.listdir(scene.os_path())
+                            if f.startswith("materialSample") and f.endswith(".rib"))
+        if not candidates:
+            raise RuntimeError("Preview scene not found in %s" % scene.os_path())
+        ribfile = scene.join(candidates[-1])
         ral._writeMaterialRIB(asset, matdir)
         ral._writeConfigRIB(scene, FilePath(rmantree), FilePath(os.environ.get("RMSTREE", "")), matdir, "std")
         ral._writeDisplayChannelRIB(asset, ribfile)
         ral._writeDisplayFilterRIB(asset, scene)
-        ral._writeLightRIB(asset, scene, hdr=THUMBNAIL_HDR)
-        light_rib = scene.join("m_lightrig_envMap.rib").os_path()
-        with open(light_rib, "r") as f:
-            lrib = f.read()
-        if re.search(r'"float exposure"\s*\[', lrib):
-            lrib = re.sub(r'("float exposure"\s*)\[\s*([-+0-9.eE]+)\s*\]',
-                          lambda m: '%s[%g]' % (m.group(1), float(m.group(2)) + THUMBNAIL_DOME_EXPOSURE), lrib)
-        else:
-            lrib = re.sub(r'(Light\s+"PxrDomeLight"\s+"[^"]*")',
-                          r'\g<1> "float exposure" [%g]' % THUMBNAIL_DOME_EXPOSURE, lrib)
-        with open(light_rib, "w") as f:
-            f.write(lrib)
+        try:
+            ral._writeLightRIB(asset, scene, hdr=THUMBNAIL_HDR)
+        except Exception:
+            # this RenderMan version has no such light rig: use the Preset Browser's current one
+            print("[PB] Light rig '%s' not found, using the Preset Browser's." % THUMBNAIL_HDR)
+            ral._writeLightRIB(asset, scene, hdr=ral.previewHdrAsset(ral.getPreviewHdrIdx()))
 
         # 3. higher resolution and more samples than the Preset Browser
         with open(ribfile.os_path(), "r") as f:
