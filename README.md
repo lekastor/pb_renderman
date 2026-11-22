@@ -67,7 +67,7 @@ The **MyLibrary** category lists your own PxrSurface presets, stored in their ow
 
 ### Shared presets
 
-The tool ships with presets by the author (reference balls, skin, glass, liquids…) in its `presets` folder, laid out like MyLibrary (category subfolders, `.mel` + `.png`). At launch they are copied into your MyLibrary:
+The tool ships with presets by **Julien Duval** (reference balls, skin, plastics, glass, liquids…) in its `presets` folder, laid out like MyLibrary (category subfolders, `.mel` + `.png`). At launch they are copied into your MyLibrary:
 - a new shared preset is added, unless you already have a preset with the same name;
 - an updated shared preset replaces your copy only if you have not modified it;
 - a shared preset you deleted or modified is left alone.
@@ -139,6 +139,7 @@ A special thank you to **Anton Palmqvist** and all the **contributors** of [Phys
 
 - Author: Julien Duval
 - Developed with the assistance of Claude (Anthropic)
+- Shared MyLibrary presets and thumbnails: Julien Duval (MIT, like the tool)
 - Material data: [Physically Based API](https://api.physicallybased.info), CC0, by Anton Palmqvist and contributors
 
 Independent project, not affiliated with or endorsed by Pixar, Autodesk or physicallybased.info. RenderMan is a trademark of Pixar; Maya is a trademark of Autodesk.

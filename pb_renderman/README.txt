@@ -124,9 +124,10 @@ folders:
 
 SHARED PRESETS
 --------------
-The tool ships with presets by the author (reference balls, skin, glass,
-liquids...) in its presets folder, laid out like MyLibrary (category
-subfolders, .mel + .png). At launch they are copied into your MyLibrary:
+The tool ships with presets by Julien Duval (reference balls, skin,
+plastics, glass, liquids...) in its presets folder, laid out like
+MyLibrary (category subfolders, .mel + .png). At launch they are copied
+into your MyLibrary:
 - a new shared preset is added, unless you already have a preset with the
   same name;
 - an updated shared preset replaces your copy only if you have not
@@ -262,6 +263,8 @@ CREDITS
 -------
 - Author: Julien Duval
 - Developed with the assistance of Claude (Anthropic)
+- Shared MyLibrary presets and thumbnails: Julien Duval (MIT, like the
+  tool)
 - Material data: Physically Based API (https://api.physicallybased.info),
   CC0, by Anton Palmqvist and contributors
 

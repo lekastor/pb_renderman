@@ -38,6 +38,7 @@ Version:  1.1.0 (2026-11-22)
 License:  MIT (see below)
 Credits:  Developed with the assistance of Claude (Anthropic).
           Material data: Physically Based API, CC0 (Anton Palmqvist and contributors).
+          Shared MyLibrary presets (presets folder) and thumbnails: Julien Duval.
 Thanks:   A special thank you to Anton Palmqvist and all the contributors of
           Physically Based (https://physicallybased.info). This tool exists because
           they measured, gathered and freely shared these values with the CG community.
@@ -1728,7 +1729,7 @@ Move to category act on all the selected presets (Ctrl / Shift-click); Move to c
 preview scene (%(thumb)d px), saved next to the .mel. Ctrl / Shift-click in the list to render
 several in a row; Esc cancels. <b>Draft quality</b>: faster, noisier thumbnails. Your own .png or .jpg with the preset's name also works.</li>
 <li>Deleted presets and categories go to the <code>_trash</code> subfolder and can be restored.</li>
-<li><b>Shared presets</b>: the presets shipped in the tool's <code>presets</code> folder are copied into
+<li><b>Shared presets</b>: the presets by Julien Duval shipped in the tool's <code>presets</code> folder are copied into
 MyLibrary at launch. Your changes are never overwritten, and a shared preset you delete does not come back.</li>
 </ul>
 
@@ -1764,6 +1765,7 @@ shared these values with the CG community. Missing material or wrong value?
 
 <p><b>Credits</b><br>
 Material data: Physically Based API, CC0, by Anton Palmqvist and contributors.<br>
+Shared MyLibrary presets and thumbnails: %(author)s (MIT, like the tool).<br>
 Developed with the assistance of Claude (Anthropic).</p>
 
 <p><b>License</b><br>
