@@ -1099,6 +1099,7 @@ def delete_from_library(entry):
 
 
 THUMBNAIL_SIZE = 100              # rendered resolution (Preset Browser: 128 px), shown 1:1
+PREVIEW_BOX = 256                 # UI preview area: images shown 1:1, larger ones scaled down, never up
 THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
 THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
 THUMBNAIL_PIXEL_VARIANCE = 0.02   # Preset Browser: 0.01
@@ -1503,7 +1504,7 @@ if QtWidgets is not None:
 
             right = QtWidgets.QVBoxLayout()
             self.preview = QtWidgets.QLabel()
-            self.preview.setFixedSize(THUMBNAIL_SIZE + 2, THUMBNAIL_SIZE + 2)  # + 1 px border
+            self.preview.setFixedSize(PREVIEW_BOX + 2, PREVIEW_BOX + 2)  # + 1 px border
             self.preview.setAlignment(QtCore.Qt.AlignCenter)
             self.preview.setStyleSheet("background:#222;border:1px solid #444;")
             right.addWidget(self.preview, 0, QtCore.Qt.AlignHCenter)
@@ -1722,8 +1723,8 @@ if QtWidgets is not None:
             self._load_image(m)
 
         def _set_preview(self, pm):
-            """Shows an image 1:1, only scaled down (aspect ratio kept, never stretched) to THUMBNAIL_SIZE."""
-            box = THUMBNAIL_SIZE
+            """Shows an image 1:1, centred; only scaled down (aspect ratio kept, never stretched) to fit PREVIEW_BOX."""
+            box = PREVIEW_BOX
             if pm.width() > box or pm.height() > box:
                 pm = pm.scaled(box, box, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
             self.preview.setPixmap(pm)
@@ -1778,7 +1779,7 @@ if QtWidgets is not None:
                 if not pm.isNull():
                     self._set_preview(pm)
                     return
-            self.preview.setText("No thumbnail\n\nRender\nThumbnail")
+            self.preview.setText("MyLibrary\n\nNo thumbnail yet:\nclick Render Thumbnail")
 
         def _render_thumbnail(self, entry=None):
             if entry is None:
@@ -1881,7 +1882,7 @@ if QtWidgets is not None:
             if not cur or cur.text() != name:
                 return
             if not data:
-                self.preview.setText("No preview")
+                self.preview.setText("Preview unavailable")
                 return
             self._img_cache[name] = data
             pm = QtGui.QPixmap()
