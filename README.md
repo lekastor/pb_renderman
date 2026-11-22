@@ -1,6 +1,6 @@
-# pb_renderman
+# Physically Based for RenderMan
 
-**Physically Based → PxrSurface** for Maya + RenderMan.
+**Real-world material values for PxrSurface in Maya.**
 
 Browse the [Physically Based](https://physicallybased.info) material database from inside Maya and set up a `PxrSurface` from measured values in one click: metals with real complex IOR, glass and liquids with Beer–Lambert interior absorption, scattering media, skin subsurface and thin-film iridescence. Everything is converted to your scene's rendering space (ACEScg or linear sRGB).
 
@@ -122,6 +122,8 @@ Your presets live in `Documents\maya\physicallybased_MyLibrary\`. Back this fold
 - Author: Julien Duval
 - Developed with the assistance of Claude (Anthropic)
 - Material data: [Physically Based API](https://api.physicallybased.info), CC0, by Anton Palmqvist and contributors
+
+Independent project, not affiliated with or endorsed by Pixar, Autodesk or physicallybased.info. RenderMan is a trademark of Pixar; Maya is a trademark of Autodesk.
 
 ## License
 

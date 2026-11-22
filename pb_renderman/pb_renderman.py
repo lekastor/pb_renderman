@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
-pb_renderman.py
-================
+Physically Based for RenderMan  (pb_renderman.py)
+=================================================
+Real-world material values for PxrSurface in Maya.
 Browser for the https://physicallybased.info database in Maya + RenderMan.
 Creates or updates a PxrSurface from the database values.
 Specular: Primary Specular with physical Fresnel (IOR / n,k). Transmissive materials
@@ -1371,7 +1372,7 @@ def install_shelf_button(shelf=None):
                 cmds.shelfButton(child, query=True, label=True) == "pb_renderman":
             cmds.deleteUI(child)
     cmds.shelfButton(parent=shelf, label="pb_renderman", imageOverlayLabel="",
-                     annotation="Physically Based -> PxrSurface",
+                     annotation="Physically Based for RenderMan: real-world material values for PxrSurface",
                      image=icon_path() or "commandButton.png",
                      command="import pb_renderman\npb_renderman.show()", sourceType="python")
     print("[PB] Shelf button added to '%s'." % shelf)
@@ -1457,7 +1458,7 @@ if QtWidgets is not None:
         def __init__(self, parent=None):
             super(PBWindow, self).__init__(parent)
             self.setObjectName(WINDOW_OBJECT)
-            self.setWindowTitle("Physically Based → PxrSurface  v%s — %s" % (__version__, __author__))
+            self.setWindowTitle("Physically Based for RenderMan  v%s — %s" % (__version__, __author__))
             self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
             self.resize(720, 520)
             icon = QtGui.QIcon()

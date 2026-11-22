@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
-pb_renderman package: Physically Based -> PxrSurface for Maya + RenderMan.
+pb_renderman package: Physically Based for RenderMan, real-world material values for PxrSurface in Maya.
 Author: Julien Duval. See pb_renderman.py and README.txt in this folder.
 
 Usage (Script Editor, Python tab, or a shelf button):
