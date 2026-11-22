@@ -1135,9 +1135,18 @@ def render_library_thumbnail(entry):
             pass
         rab.parse_node_graph([sg], asset)
         asset.save(FilePath(os.path.join(tmpdir, "asset.json")))
-        ral.renderAssetPreview(asset, progress=rab.MayaProgress(),
-                               host_tree=os.environ.get("RMSTREE", ""),
-                               rmantree=os.environ.get("RMANTREE") or None)
+        # renderAssetPreview always works in <temp>/RenderManAssets and skips copying
+        # the preview scene if that folder could not be emptied (a file still locked
+        # by a previous render). Give each render a fresh temp root instead.
+        previous_tempdir = tempfile.tempdir
+        tempfile.tempdir = os.path.join(tmpdir, "render")
+        os.makedirs(tempfile.tempdir)
+        try:
+            ral.renderAssetPreview(asset, progress=rab.MayaProgress(),
+                                   host_tree=os.environ.get("RMSTREE", ""),
+                                   rmantree=os.environ.get("RMANTREE") or None)
+        finally:
+            tempfile.tempdir = previous_tempdir
         rendered = os.path.join(tmpdir, ral.getCurrentPreviewHdrIcon())
         if not os.path.isfile(rendered):
             rendered = next((os.path.join(tmpdir, f) for f in os.listdir(tmpdir)
