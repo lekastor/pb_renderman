@@ -1212,6 +1212,64 @@ def _rotate_light_rib(rib, degrees):
     return re.sub(r'(\n\s*)(Light\s+"PxrDomeLight")', r'\1Rotate %g 0 1 0\1\2' % degrees, rib, count=1)
 
 
+class RenderCancelled(Exception):
+    pass
+
+
+def _run_with_progress(cmd, title, startupinfo=None):
+    """
+    Runs prman with -Progress and shows its percentage in a Maya progress window
+    (Esc or Cancel stops the render). Returns the process output (text).
+    """
+    import subprocess
+    import queue
+    from maya import cmds
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, startupinfo=startupinfo)
+    lines = queue.Queue()
+
+    def reader():
+        buf = b""
+        while True:
+            chunk = proc.stdout.read1(256) if hasattr(proc.stdout, "read1") else proc.stdout.read(64)
+            if not chunk:
+                break
+            buf += chunk
+            parts = re.split(rb"[\r\n]", buf)
+            buf = parts.pop()
+            for part in parts:
+                lines.put(part.decode(errors="replace"))
+        if buf:
+            lines.put(buf.decode(errors="replace"))
+
+    t = threading.Thread(target=reader)
+    t.daemon = True
+    t.start()
+    log, percent = [], 0
+    cmds.progressWindow(title="Physically Based for RenderMan", status=title + "  0%",
+                        progress=0, maxValue=100, isInterruptable=True)
+    try:
+        while proc.poll() is None or not lines.empty() or t.is_alive():
+            while not lines.empty():
+                line = lines.get()
+                m = re.search(r"R90000\s+(\d+)%", line)
+                if m:
+                    percent = int(m.group(1))
+                    cmds.progressWindow(edit=True, progress=percent, status="%s  %d%%" % (title, percent))
+                elif line.strip():
+                    log.append(line)
+            if cmds.progressWindow(query=True, isCancelled=True):
+                proc.kill()
+                raise RenderCancelled("Thumbnail render cancelled.")
+            time.sleep(0.05)
+            if proc.poll() is not None and lines.empty():
+                t.join(0.5)
+                if lines.empty():
+                    break
+    finally:
+        cmds.progressWindow(endProgress=True)
+    return "\n".join(log)
+
+
 def render_library_thumbnail(entry):
     """
     Renders a MyLibrary preset in the RenderMan Preset Browser preview scene
@@ -1270,7 +1328,6 @@ def render_library_thumbnail(entry):
                 cmds.delete(node)
         cmds.undoInfo(stateWithoutFlush=undo_state)
 
-    progress = rab.MayaProgress()
     try:
         # 2. the Preset Browser preview scene, in its own folder
         scene = FilePath(os.path.join(tmpdir, "scene"))
@@ -1312,15 +1369,13 @@ def render_library_thumbnail(entry):
             f.write(rib)
 
         # 4. render
-        progress.Start()
-        progress.Update(0, "Rendering thumbnail: %s" % entry["name"])
         ncpu = max(1, multiprocessing.cpu_count() - 1)
-        cmd = [os.path.join(rmanbin, app("prman")), "-t:%d" % ncpu, "-cwd", scene.os_path(), ribfile.os_path()]
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startup_info())
+        cmd = [os.path.join(rmanbin, app("prman")), "-Progress", "-t:%d" % ncpu,
+               "-cwd", scene.os_path(), ribfile.os_path()]
+        output = _run_with_progress(cmd, "Rendering thumbnail: %s" % entry["name"], startup_info())
         tif = os.path.join(tmpdir, "asset_100.tif")
         if not os.path.isfile(tif):
-            raise RuntimeError("prman did not produce an image:\n%s"
-                               % proc.stderr.decode(errors="replace")[-1500:])
+            raise RuntimeError("prman did not produce an image:\n%s" % output[-1500:])
 
         # 5. tif (rendering space) -> png (Maya's display/view transform)
         target = os.path.join(os.path.dirname(entry["_path"]), entry["_preset"] + ".png")
@@ -1339,7 +1394,6 @@ def render_library_thumbnail(entry):
             errors.append(res.stderr.decode(errors="replace").strip())
         raise RuntimeError("Could not convert the render to PNG:\n" + "\n".join(errors))
     finally:
-        progress.End()
         # keep the last render's working files (RIBs, asset, raw tif) for diagnosis
         try:
             last = os.path.join(_cache_path(), "thumbnail_last_render")
@@ -1822,6 +1876,9 @@ if QtWidgets is not None:
             QtWidgets.QApplication.processEvents()
             try:
                 path = render_library_thumbnail(entry)
+            except RenderCancelled:
+                self.status.setText("Thumbnail cancelled: %s" % entry["name"])
+                return
             except Exception as exc:
                 self.status.setText("Thumbnail failed: %s" % exc)
                 raise
