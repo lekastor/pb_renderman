@@ -10,7 +10,7 @@ absorption, scattering media, skin subsurface and thin-film iridescence.
 Everything is converted to your scene's rendering space (ACEScg or linear sRGB).
 
 Author:   Julien Duval
-Version:  1.0.0
+Version:  1.1.0
 License:  MIT
 
 

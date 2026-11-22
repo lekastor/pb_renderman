@@ -34,7 +34,7 @@ Usage:
 Maya 2022+ (Python 3, PySide2 or PySide6) / RenderMan for Maya 24+.
 
 Author:   Julien Duval
-Version:  1.0.0 (2026-11-21)
+Version:  1.1.0 (2026-11-22)
 License:  MIT (see below)
 Credits:  Developed with the assistance of Claude (Anthropic).
           Material data: Physically Based API, CC0 (Anton Palmqvist and contributors).
@@ -64,7 +64,7 @@ SOFTWARE.
 """
 
 __author__ = "Julien Duval"
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 TOOL_NAME = "Physically Based for RenderMan"
 TOOL_TAGLINE = "Real-world material values for PxrSurface in Maya"
 HOMEPAGE = "https://github.com/lekastor/pb_renderman"

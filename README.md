@@ -4,7 +4,7 @@
 
 Browse the [Physically Based](https://physicallybased.info) material database from inside Maya and set up a `PxrSurface` from measured values in one click: metals with real complex IOR, glass and liquids with Beer–Lambert interior absorption, scattering media, skin subsurface and thin-film iridescence. Everything is converted to your scene's rendering space (ACEScg or linear sRGB).
 
-Author: **Julien Duval** · Version **1.0.0** · License **MIT**
+Author: **Julien Duval** · Version **1.1.0** · License **MIT**
 
 ---
 
