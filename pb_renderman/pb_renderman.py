@@ -1098,7 +1098,7 @@ def delete_from_library(entry):
     return trash
 
 
-THUMBNAIL_SIZE = 100              # rendered resolution (Preset Browser: 128 px), shown 1:1
+THUMBNAIL_SIZE = 150              # rendered resolution (Preset Browser: 128 px), shown 1:1
 PREVIEW_BOX = 256                 # UI preview area: images shown 1:1, larger ones scaled down, never up
 THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
 THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
