@@ -59,7 +59,9 @@ current Maya session, delete that file and restart Maya once.
 
 USAGE
 -----
-1. Pick a material in the list (search by name or tag, filter by category).
+1. Pick a material in the list (search by name or tag). Two menus filter
+   the list: Physically Based (the database categories) and MyLibrary (your
+   categories); each can also hide its materials.
    The panel shows the database render, the values and exactly what will
    be set.
 
@@ -93,8 +95,13 @@ folders:
   Maya's attribute-preset format (.mel), so you can also copy one into
   Maya's own preset folder if you want it in the Attribute Editor's
   Presets menu.
-- Right-click a MyLibrary preset in the list: Rename..., Render Thumbnail or
-  Delete.... Renaming also renames its preview image.
+- Categories: the MyLibrary menu has "New category...", "Rename
+  category..." and "Delete category..." at the bottom. A category is a
+  subfolder of the library; deleting one moves it, with its presets, to
+  _trash. New presets are saved in the category picked in the menu.
+- Right-click a MyLibrary preset in the list: Rename..., Render Thumbnail,
+  Move to category or Delete.... Renaming and moving also take its preview
+  image.
 - "Delete..." (right-click) moves the preset (and its preview image) to
   the _trash subfolder of the library, so it can be restored.
 - "Render Thumbnail" renders the selected preset in RenderMan's own

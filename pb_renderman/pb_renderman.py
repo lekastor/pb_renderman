@@ -895,6 +895,8 @@ def create_on_selection(mat, colorspace="acescg", sss_scale=DEFAULT_SSS_SCALE, r
 # --------------------------------------------------------------------------- #
 
 LIBRARY_CATEGORY = "MyLibrary"
+# special entries of the category menus (item data)
+_ALL, _HIDE, _NEW_CAT, _RENAME_CAT, _DELETE_CAT = "<all>", "<hide>", "<new>", "<rename>", "<delete>"
 LIBRARY_FOLDER = "physicallybased_MyLibrary"
 PRESET_PREFIX = "PxrSurface_"
 _RE_NUM = re.compile(r'blendAttr\s+"(\w+)"\s+([-+0-9.eE]+)\s*;')
@@ -929,28 +931,112 @@ def parse_preset(path):
     return attrs
 
 
+_PRESET_IMAGE_EXTS = (".png", ".jpg", ".jpeg")
+
+
+def library_categories(root=None):
+    """MyLibrary categories: the subfolders of the library (not _trash or hidden ones)."""
+    root = root or library_dir()
+    if not os.path.isdir(root):
+        return []
+    return sorted((d for d in os.listdir(root)
+                   if os.path.isdir(os.path.join(root, d)) and not d.startswith(("_", "."))), key=str.lower)
+
+
 def load_library(folder=None):
-    """Lists the presets of the library folder as entries of the MyLibrary category."""
-    folder = folder or library_dir()
+    """
+    Lists the presets of the library as entries of the MyLibrary category:
+    the .mel files of the library folder (no category) and of its subfolders
+    (one level, the subfolder name being the category).
+    """
+    root = folder or library_dir()
     out = []
-    if not os.path.isdir(folder):
+    if not os.path.isdir(root):
         return out
-    for fn in sorted(os.listdir(folder), key=str.lower):
-        if not fn.lower().endswith(".mel"):
-            continue
-        stem = fn[:-4]
-        display = stem[len(PRESET_PREFIX):] if stem.startswith(PRESET_PREFIX) else stem
-        path = os.path.join(folder, fn)
-        try:
-            attrs = parse_preset(path)
-        except Exception as exc:
-            print("[PB] Could not read preset %s: %s" % (fn, exc))
-            continue
-        image = next((os.path.join(folder, stem + ext) for ext in (".png", ".jpg", ".jpeg")
-                      if os.path.isfile(os.path.join(folder, stem + ext))), None)
-        out.append({"name": display, "category": [LIBRARY_CATEGORY], "_library": True,
-                    "_preset": stem, "_path": path, "_attrs": attrs, "_image": image})
+    for libcat in [""] + library_categories(root):
+        sub = os.path.join(root, libcat) if libcat else root
+        for fn in sorted(os.listdir(sub), key=str.lower):
+            if not fn.lower().endswith(".mel"):
+                continue
+            stem = fn[:-4]
+            display = stem[len(PRESET_PREFIX):] if stem.startswith(PRESET_PREFIX) else stem
+            path = os.path.join(sub, fn)
+            try:
+                attrs = parse_preset(path)
+            except Exception as exc:
+                print("[PB] Could not read preset %s: %s" % (path, exc))
+                continue
+            image = next((os.path.join(sub, stem + ext) for ext in _PRESET_IMAGE_EXTS
+                          if os.path.isfile(os.path.join(sub, stem + ext))), None)
+            out.append({"name": display, "category": [LIBRARY_CATEGORY], "_library": True, "_libcat": libcat,
+                        "_preset": stem, "_path": path, "_attrs": attrs, "_image": image})
     return out
+
+
+def category_folder_name(name):
+    """Folder name for a MyLibrary category (letters, digits, _ and -; no leading _)."""
+    clean = "".join(c if (c.isalnum() or c in "_-") else "_" for c in name.strip())
+    return clean.strip("_-")
+
+
+def _check_category_name(name, exclude=None):
+    folder = category_folder_name(name)
+    if not folder:
+        raise ValueError("Invalid category name.")
+    target = os.path.join(library_dir(), folder)
+    taken = {c.lower() for c in library_categories()} - {(exclude or "").lower()}
+    if folder.lower() in taken or (os.path.exists(target) and (exclude or "").lower() != folder.lower()):
+        raise ValueError("A category named '%s' already exists." % folder)
+    return folder, target
+
+
+def create_library_category(name):
+    """Creates a MyLibrary category (a subfolder of the library). Returns its name."""
+    folder, target = _check_category_name(name)
+    os.makedirs(target)
+    return folder
+
+
+def rename_library_category(old, new):
+    """Renames a MyLibrary category folder. Returns the new name."""
+    folder, target = _check_category_name(new, exclude=old)
+    if folder != old:
+        os.rename(os.path.join(library_dir(), old), target)
+    return folder
+
+
+def delete_library_category(name):
+    """
+    Moves a MyLibrary category folder, with its presets, to the library's
+    _trash subfolder (recoverable). Returns the trash folder.
+    """
+    import shutil
+    src = os.path.join(library_dir(), name)
+    if not name or not os.path.isdir(src):
+        raise ValueError("Unknown category: %s" % name)
+    trash = os.path.join(library_dir(), "_trash")
+    if not os.path.isdir(trash):
+        os.makedirs(trash)
+    shutil.move(src, os.path.join(trash, "%s_%s" % (name, time.strftime("%Y%m%d_%H%M%S"))))
+    return trash
+
+
+def move_to_category(entry, libcat):
+    """Moves a preset (and its preview images) to another category ("" = none). Returns the new path."""
+    dest = os.path.join(library_dir(), libcat) if libcat else library_dir()
+    if not os.path.isdir(dest):
+        raise ValueError("Unknown category: %s" % libcat)
+    src_dir, stem = os.path.dirname(entry["_path"]), entry["_preset"]
+    if os.path.normcase(os.path.abspath(src_dir)) == os.path.normcase(os.path.abspath(dest)):
+        return entry["_path"]
+    if os.path.exists(os.path.join(dest, stem + ".mel")):
+        raise ValueError("'%s' already exists in %s." % (entry["name"], libcat or "MyLibrary (no category)"))
+    import shutil
+    for ext in (".mel",) + _PRESET_IMAGE_EXTS:
+        src = os.path.join(src_dir, stem + ext)
+        if os.path.isfile(src):
+            shutil.move(src, os.path.join(dest, stem + ext))
+    return os.path.join(dest, stem + ".mel")
 
 
 def _preset_color(a, name):
@@ -1126,7 +1212,7 @@ def rename_in_library(entry, new_name):
     # Windows is case-insensitive: a case-only rename finds the preset itself
     if os.path.exists(target) and stem.lower() != old.lower():
         raise ValueError("A preset named '%s' already exists." % stem[len(PRESET_PREFIX):])
-    for ext in (".mel", ".png", ".jpg", ".jpeg"):
+    for ext in (".mel",) + _PRESET_IMAGE_EXTS:
         src = os.path.join(folder, old + ext)
         if os.path.isfile(src):
             os.rename(src, os.path.join(folder, stem + ext))
@@ -1404,10 +1490,11 @@ def render_library_thumbnail(entry):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def save_to_library(shader, name):
+def save_to_library(shader, name, libcat=""):
     """
     Saves every numeric and string attribute of the shader as a preset file
-    (Maya attribute-preset format) in the library folder. Returns the path.
+    (Maya attribute-preset format) in the library folder, or in its libcat
+    category subfolder. Returns the path.
     """
     from maya import cmds
     stem = preset_file_name(name)
@@ -1429,7 +1516,8 @@ def save_to_library(shader, name):
         except Exception:
             continue
     lines.append("endAttrPreset();")
-    path = os.path.join(library_dir(), stem + ".mel")
+    path = os.path.join(library_dir(), libcat, stem + ".mel") if libcat else \
+        os.path.join(library_dir(), stem + ".mel")
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines) + "\n")
     return path
@@ -1571,15 +1659,26 @@ if QtWidgets is not None:
             lay = QtWidgets.QHBoxLayout(self)
 
             left = QtWidgets.QVBoxLayout()
-            row = QtWidgets.QHBoxLayout()
             self.search = QtWidgets.QLineEdit()
             self.search.setPlaceholderText("Search (name, tag)…")
             self.search.textChanged.connect(self._filter)
+            left.addWidget(self.search)
+            grid = QtWidgets.QGridLayout()
             self.cat = QtWidgets.QComboBox()
+            self.cat.setToolTip("Physically Based database categories")
             self.cat.currentIndexChanged.connect(self._filter)
-            row.addWidget(self.search, 2)
-            row.addWidget(self.cat, 1)
-            left.addLayout(row)
+            self.libcat = QtWidgets.QComboBox()
+            self.libcat.setToolTip("MyLibrary categories (subfolders of %s)\n"
+                                   "New, Rename and Delete category at the bottom of the menu."
+                                   % library_dir(create=False))
+            self._libcat_prev = 0
+            self.libcat.currentIndexChanged.connect(self._on_libcat_changed)
+            grid.addWidget(QtWidgets.QLabel("Physically Based:"), 0, 0)
+            grid.addWidget(self.cat, 0, 1)
+            grid.addWidget(QtWidgets.QLabel("MyLibrary:"), 1, 0)
+            grid.addWidget(self.libcat, 1, 1)
+            grid.setColumnStretch(1, 1)
+            left.addLayout(grid)
             self.list = QtWidgets.QListWidget()
             self.list.currentItemChanged.connect(self._on_select)
             self.list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)  # MyLibrary: Rename / Thumbnail / Delete
@@ -1693,7 +1792,8 @@ if QtWidgets is not None:
             right.addLayout(brow)
             self.save_btn = QtWidgets.QPushButton("Save Selected to MyLibrary…")
             self.save_btn.setToolTip("Save the selected PxrSurface (or the one assigned to the selected object)\n"
-                                     "as a preset in MyLibrary (" + library_dir(create=False) + ").\n"
+                                     "as a preset in MyLibrary (" + library_dir(create=False) + "),\n"
+                                     "in the category picked in the MyLibrary menu.\n"
                                      "Tip: put a .jpg or .png with the same name next to the .mel\n"
                                      "to get a preview.")
             self.save_btn.clicked.connect(lambda *_: self._save_library())
@@ -1730,7 +1830,84 @@ if QtWidgets is not None:
             self.pb_materials = sorted(mats, key=lambda m: m.get("name", "").lower())
             self._rebuild()
 
-        def _rebuild(self, select=None):
+        @staticmethod
+        def _fill_combo(combo, items, keep=None):
+            """items: (label, data) pairs, None = separator. Keeps the entry whose data is keep."""
+            combo.blockSignals(True)
+            combo.clear()
+            for it in items:
+                if it is None:
+                    combo.insertSeparator(combo.count())
+                else:
+                    combo.addItem(it[0], it[1])
+            idx = combo.findData(keep) if keep is not None else -1
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+            combo.blockSignals(False)
+
+        def _on_libcat_changed(self, idx):
+            action = self.libcat.itemData(idx)
+            if action in (_NEW_CAT, _RENAME_CAT, _DELETE_CAT):
+                self.libcat.blockSignals(True)
+                self.libcat.setCurrentIndex(self._libcat_prev)
+                self.libcat.blockSignals(False)
+                QtCore.QTimer.singleShot(0, lambda: self._category_action(action))
+                return
+            self._libcat_prev = idx
+            self._filter()
+
+        def _current_libcat(self):
+            """The MyLibrary category picked in the menu, or "" (none, All or Hide)."""
+            data = self.libcat.currentData()
+            return data if data not in (None, _ALL, _HIDE) else ""
+
+        def _category_action(self, action):
+            title = "MyLibrary categories"
+            try:
+                if action == _NEW_CAT:
+                    name, ok = QtWidgets.QInputDialog.getText(self, title, "New category name:")
+                    if not ok or not name.strip():
+                        return
+                    folder = create_library_category(name)
+                    self._rebuild(libcat=folder)
+                    self.status.setText("Category created: %s" % folder)
+                    return
+                cat = self._current_libcat()
+                if not cat:
+                    QtWidgets.QMessageBox.information(self, title, "Pick a category in the MyLibrary menu first.")
+                    return
+                if action == _RENAME_CAT:
+                    name, ok = QtWidgets.QInputDialog.getText(self, title, "New name for '%s':" % cat, text=cat)
+                    if not ok or not name.strip():
+                        return
+                    folder = rename_library_category(cat, name)
+                    self._rebuild(libcat=folder)
+                    self.status.setText("Category renamed: %s -> %s" % (cat, folder))
+                elif action == _DELETE_CAT:
+                    n = sum(1 for m in self.library if m.get("_libcat") == cat)
+                    answer = QtWidgets.QMessageBox.question(
+                        self, title,
+                        "Delete the category '%s' and its %d preset(s)?\n\nThe folder is moved to the _trash "
+                        "subfolder of\n%s\nand can be restored from there." % (cat, n, library_dir()))
+                    if answer != QtWidgets.QMessageBox.Yes:
+                        return
+                    trash = delete_library_category(cat)
+                    print("[PB] Deleted category %s -> %s" % (cat, trash))
+                    self._rebuild(libcat=_ALL)
+                    self.status.setText("Category deleted: %s (in _trash)" % cat)
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(self, title, str(exc))
+
+        def _move_preset(self, m, libcat):
+            try:
+                path = move_to_category(m, libcat)
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(self, "Move to category", str(exc))
+                return
+            print("[PB] Moved %s -> %s" % (m["_path"], path))
+            self._rebuild(select=path)
+            self.status.setText("Moved %s to %s" % (m["name"], libcat or "No category"))
+
+        def _rebuild(self, select=None, libcat=None):
             """Merges the database and the library presets, refreshes categories and list."""
             try:
                 self.library = load_library()
@@ -1738,39 +1915,45 @@ if QtWidgets is not None:
                 self.library = []
                 print("[PB] Library unavailable: %s" % exc)
             self.materials = self.library + getattr(self, "pb_materials", [])
-            cats = sorted({c for m in self.materials for c in categories(m)} - {LIBRARY_CATEGORY})
-            current = self.cat.currentText()
-            self.cat.blockSignals(True)
-            self.cat.clear()
-            self.cat.addItems(["All categories", LIBRARY_CATEGORY] + cats)
-            if current and self.cat.findText(current) >= 0:
-                self.cat.setCurrentText(current)
-            self.cat.blockSignals(False)
+            cats = sorted({c for m in self.materials if not m.get("_library") for c in categories(m)})
+            self._fill_combo(self.cat, [("All categories", _ALL)] + [(c, c) for c in cats]
+                             + [None, ("Hide Physically Based", _HIDE)], self.cat.currentData())
+            libcats = library_categories()
+            self._fill_combo(self.libcat, [("All MyLibrary", _ALL), ("No category", "")]
+                             + [(c, c) for c in libcats]
+                             + [None, ("Hide MyLibrary", _HIDE),
+                                None, ("New category…", _NEW_CAT), ("Rename category…", _RENAME_CAT),
+                                ("Delete category…", _DELETE_CAT)],
+                             libcat if libcat is not None else self.libcat.currentData())
+            self._libcat_prev = self.libcat.currentIndex()
             self._filter()
             self.status.setText("%d materials, %d in MyLibrary" % (len(self.materials) - len(self.library), len(self.library)))
             self.status.setToolTip("MyLibrary folder: " + library_dir())
             if select:
                 for i in range(self.list.count()):
                     m = self.list.item(i).data(QtCore.Qt.UserRole)
-                    if m.get("_library") and m.get("_preset") == select:
+                    if m.get("_library") and select in (m.get("_path"), m.get("_preset")):
                         self.list.setCurrentRow(i)
                         break
 
         def _filter(self, *_):
             txt = self.search.text().lower().strip()
-            cat = self.cat.currentText()
+            pb_cat, lib_cat = self.cat.currentData(), self.libcat.currentData()
             self.list.clear()
             for m in self.materials:
                 hay = (m.get("name", "") + " " + " ".join(map(str, m.get("tags") or []))).lower()
                 if txt and txt not in hay:
                     continue
-                if self.cat.currentIndex() > 0 and cat not in categories(m):
+                if m.get("_library"):
+                    if lib_cat == _HIDE or (lib_cat not in (None, _ALL) and m.get("_libcat", "") != lib_cat):
+                        continue
+                elif pb_cat == _HIDE or (pb_cat not in (None, _ALL) and pb_cat not in categories(m)):
                     continue
                 it = QtWidgets.QListWidgetItem(m.get("name", "?"))
                 it.setData(QtCore.Qt.UserRole, m)
                 if m.get("_library"):
                     f = it.font(); f.setBold(True); it.setFont(f)
-                    it.setToolTip("MyLibrary: " + m["_path"])
+                    it.setToolTip("MyLibrary%s: %s" % (" / " + m["_libcat"] if m.get("_libcat") else "", m["_path"]))
                 col = preset_swatch(m["_attrs"]) if m.get("_library") else pick_color(m.get("color"), self.cs.currentText())
                 if col:
                     pm = QtGui.QPixmap(14, 14)
@@ -1825,7 +2008,8 @@ if QtWidgets is not None:
             def rgb(k):
                 c = _preset_color(a, k)
                 return ", ".join("%.3g" % x for x in c) if c else "-"
-            rows = ["<b>%s</b> — %s preset" % (m["name"], LIBRARY_CATEGORY),
+            rows = ["<b>%s</b> — %s%s preset" % (m["name"], LIBRARY_CATEGORY,
+                                                  " / " + m["_libcat"] if m.get("_libcat") else ""),
                     "<span style='color:#888'>%s</span>" % m["_path"]]
             if a.get("pbMaterial"):
                 rows.append("based on: %s" % a["pbMaterial"])
@@ -1883,7 +2067,7 @@ if QtWidgets is not None:
                 self.status.setText("Thumbnail failed: %s" % exc)
                 raise
             print("[PB] Thumbnail: %s" % path)
-            self._rebuild(select=entry["_preset"])
+            self._rebuild(select=entry["_path"])
             self.status.setText("Thumbnail rendered: %s" % entry["name"])
 
         def _list_menu(self, pos):
@@ -1896,6 +2080,11 @@ if QtWidgets is not None:
             menu = QtWidgets.QMenu(self.list)
             menu.addAction("Rename...", lambda: self._rename_library())
             menu.addAction("Render Thumbnail", lambda: self._render_thumbnail())
+            move = menu.addMenu("Move to category")
+            for c in [""] + library_categories():
+                act = move.addAction(c or "No category")
+                act.setEnabled(c != m.get("_libcat", ""))
+                act.triggered.connect(lambda *_, c=c: self._move_preset(m, c))  # *_: Qt's checked flag
             menu.addSeparator()
             menu.addAction("Delete...", lambda: self._delete_library())
             pt = self.list.viewport().mapToGlobal(pos)
@@ -1917,7 +2106,7 @@ if QtWidgets is not None:
                 QtWidgets.QMessageBox.warning(self, "Rename MyLibrary preset", str(exc))
                 return
             print("[PB] Renamed %s -> %s" % (m["_preset"], stem))
-            self._rebuild(select=stem)
+            self._rebuild(select=os.path.join(os.path.dirname(m["_path"]), stem + ".mel"))
             self.status.setText("Renamed: %s -> %s" % (m["name"], stem[len(PRESET_PREFIX):]))
 
         def _delete_library(self):
@@ -1953,25 +2142,28 @@ if QtWidgets is not None:
                 return
             short = shader.split("|")[-1]
             guess = short.replace("_PxrSurface", "").replace("PB_", "").replace("Lib_", "")
+            libcat = self._current_libcat()
+            where = "MyLibrary / " + libcat if libcat else "MyLibrary (no category)"
             name, ok = QtWidgets.QInputDialog.getText(self, "Save to MyLibrary",
-                                                      "Preset name for %s:" % short, text=guess)
+                                                      "Preset name for %s\nin %s:" % (short, where), text=guess)
             if not ok or not name.strip():
                 return
             stem = preset_file_name(name)
-            target = os.path.join(library_dir(), stem + ".mel")
+            target = os.path.join(library_dir(), libcat, stem + ".mel") if libcat else \
+                os.path.join(library_dir(), stem + ".mel")
             if os.path.isfile(target):
                 answer = QtWidgets.QMessageBox.question(self, "Save to MyLibrary",
                                                         "'%s' already exists. Overwrite it?" % stem[len(PRESET_PREFIX):])
                 if answer != QtWidgets.QMessageBox.Yes:
                     return
             try:
-                path = save_to_library(shader, name)
+                path = save_to_library(shader, name, libcat)
             except Exception as exc:
                 self.status.setText("Error: %s" % exc)
                 raise
             print("[PB] Saved %s -> %s" % (short, path))
-            self._rebuild(select=stem)
-            self.status.setText("Saved to MyLibrary: " + stem[len(PRESET_PREFIX):])
+            self._rebuild(select=path)
+            self.status.setText("Saved to %s: %s" % (where, stem[len(PRESET_PREFIX):]))
 
         def _load_image(self, m):
             name = m.get("name", "")
