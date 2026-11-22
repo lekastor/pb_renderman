@@ -1098,35 +1098,62 @@ def delete_from_library(entry):
     return trash
 
 
+THUMBNAIL_SIZE = 512          # rendered resolution (the Preset Browser renders 128 px)
+THUMBNAIL_MAX_SAMPLES = 256   # Preset Browser: 64
+
+
+def _ocio_display_args(asset):
+    """rmanoiiotool arguments converting the rendering space to Maya's display/view."""
+    from maya import cmds
+    config = os.environ.get("OCIO") or (getattr(asset, "ocio", None) or {}).get("path")
+    if not config or not os.path.isfile(str(config)):
+        return None
+    display = view = ""
+    try:
+        display = cmds.colorManagementPrefs(query=True, displayName=True) or ""
+        view = cmds.colorManagementPrefs(query=True, viewName=True) or ""
+    except Exception:
+        pass                                    # empty = the config's default display/view
+    return ["--colorconfig", str(config), "--iscolorspace", "rendering",
+            "--ociodisplay", display, view]
+
+
 def render_library_thumbnail(entry):
     """
-    Renders the RenderMan Preset Browser standard preview (same scene, lighting
-    and renderer, 128 px) for a MyLibrary preset, and saves it next to the .mel
+    Renders a MyLibrary preset in the RenderMan Preset Browser preview scene
+    (same scene, lighting and renderer), at THUMBNAIL_SIZE px with more samples,
+    converted to Maya's display/view transform, and saves it next to the .mel
     as <preset>.png. Needs RenderMan for Maya. Returns the image path.
     """
     import shutil
+    import subprocess
     import tempfile
+    import multiprocessing
     from maya import cmds
     _ensure_renderman()
     import rfm2.ui.assets_browser as rab
     import rman_utils.rman_assets.lib as ral
     from rman_utils.rman_assets.core import RmanAsset, FilePath
     from rman_utils.rman_assets.common.external_files import Storage
+    from rman_utils.rman_assets.common.utils import app, startup_info
 
+    rmantree = os.environ.get("RMANTREE")
+    if not rmantree:
+        raise RuntimeError("RMANTREE is not set: is RenderMan for Maya loaded?")
+    rmanbin = os.path.join(rmantree, "bin")
     tmpdir = tempfile.mkdtemp(prefix="pb_thumb_")
     undo_state = cmds.undoInfo(query=True, stateWithoutFlush=True)
     cmds.undoInfo(stateWithoutFlush=False)          # temporary nodes stay out of the undo queue
     shader = sg = None
     try:
+        # 1. the material, exported like the Preset Browser does
         shader = cmds.shadingNode("PxrSurface", asShader=True, name="pbThumb_PxrSurface")
         sg = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name="pbThumb_SG")
         cmds.connectAttr(shader + ".outColor", sg + ".surfaceShader", force=True)
         _apply_preset([shader], entry, [])
-
-        # dependencies (textures) are stored with the temporary asset, like a Preset Browser export
         asset = RmanAsset(assetType="nodeGraph", label=entry["name"], previewType="std",
                           storage=Storage(Storage.k_asset, asset_path=tmpdir))
-        try:                                          # same color config as the Preset Browser
+        try:
             import rfm2.ui.maya_color_manager as mcm
             mgr = mcm.color_manager()
             asset.ocio = {"config": mgr.cfg_name, "path": mgr.config_file_path(),
@@ -1134,33 +1161,72 @@ def render_library_thumbnail(entry):
         except Exception:
             pass
         rab.parse_node_graph([sg], asset)
-        asset.save(FilePath(os.path.join(tmpdir, "asset.json")))
-        # renderAssetPreview always works in <temp>/RenderManAssets and skips copying
-        # the preview scene if that folder could not be emptied (a file still locked
-        # by a previous render). Give each render a fresh temp root instead.
-        previous_tempdir = tempfile.tempdir
-        tempfile.tempdir = os.path.join(tmpdir, "render")
-        os.makedirs(tempfile.tempdir)
-        try:
-            ral.renderAssetPreview(asset, progress=rab.MayaProgress(),
-                                   host_tree=os.environ.get("RMSTREE", ""),
-                                   rmantree=os.environ.get("RMANTREE") or None)
-        finally:
-            tempfile.tempdir = previous_tempdir
-        rendered = os.path.join(tmpdir, ral.getCurrentPreviewHdrIcon())
-        if not os.path.isfile(rendered):
-            rendered = next((os.path.join(tmpdir, f) for f in os.listdir(tmpdir)
-                             if f.endswith("_100.png")), None)
-        if not rendered or not os.path.isfile(rendered):
-            raise RuntimeError("RenderMan did not produce a preview image.")
-        target = os.path.join(os.path.dirname(entry["_path"]), entry["_preset"] + ".png")
-        shutil.copyfile(rendered, target)
-        return target
+        matdir = FilePath(tmpdir)
+        asset.save(matdir.join("asset.json"))
     finally:
         for node in (sg, shader):
             if node and cmds.objExists(node):
                 cmds.delete(node)
         cmds.undoInfo(stateWithoutFlush=undo_state)
+
+    progress = rab.MayaProgress()
+    try:
+        # 2. the Preset Browser preview scene, in its own folder
+        scene = FilePath(os.path.join(tmpdir, "scene"))
+        shutil.copytree(ral.ribPath(None).os_path(), scene.os_path())
+        ribfile = scene.join("materialSample_v1.1.rib")
+        ral._writeMaterialRIB(asset, matdir)
+        ral._writeConfigRIB(scene, FilePath(rmantree), FilePath(os.environ.get("RMSTREE", "")), matdir, "std")
+        ral._writeDisplayChannelRIB(asset, ribfile)
+        ral._writeDisplayFilterRIB(asset, scene)
+        ral._writeLightRIB(asset, scene, hdr=ral.previewHdrAsset(ral.getPreviewHdrIdx()))
+
+        # 3. higher resolution and more samples than the Preset Browser
+        with open(ribfile.os_path(), "r") as f:
+            rib = f.read()
+        rib = re.sub(r'("int\[2\] FormatResolution"\s*)\[\s*\d+\s+\d+\s*\]',
+                     r'\g<1>[%d %d]' % (THUMBNAIL_SIZE, THUMBNAIL_SIZE), rib)
+        rib = re.sub(r'("int maxsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % THUMBNAIL_MAX_SAMPLES, rib)
+        rib = re.sub(r'("int minsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % (THUMBNAIL_MAX_SAMPLES // 4), rib)
+        rib = re.sub(r'("float PixelVariance"\s*)\[[^\]]*\]', r'\g<1>[0.005]', rib)
+        with open(ribfile.os_path(), "w") as f:
+            f.write(rib)
+
+        # 4. render
+        progress.Start()
+        progress.Update(0, "Rendering thumbnail: %s" % entry["name"])
+        ncpu = max(1, multiprocessing.cpu_count() - 1)
+        cmd = [os.path.join(rmanbin, app("prman")), "-t:%d" % ncpu, "-cwd", scene.os_path(), ribfile.os_path()]
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startup_info())
+        tif = os.path.join(tmpdir, "asset_100.tif")
+        if not os.path.isfile(tif):
+            raise RuntimeError("prman did not produce an image:\n%s"
+                               % proc.stderr.decode(errors="replace")[-1500:])
+
+        # 5. tif (rendering space) -> png (Maya's display/view transform)
+        target = os.path.join(os.path.dirname(entry["_path"]), entry["_preset"] + ".png")
+        oiio = os.path.join(rmanbin, app("rmanoiiotool"))
+        attempts = []
+        display_args = _ocio_display_args(asset)
+        if display_args:
+            attempts.append([oiio, tif] + display_args + ["-d", "uint8", "-o", target])
+            # some configs have no "rendering" role
+            alt = list(display_args)
+            alt[alt.index("rendering")] = "scene_linear"
+            attempts.append([oiio, tif] + alt + ["-d", "uint8", "-o", target])
+        attempts.append([oiio, tif, "--colorconvert", "linear", "sRGB", "-d", "uint8", "-o", target])
+        attempts.append([os.path.join(rmanbin, app("sho")), "-dspy", "png", "-dspyfile", target, tif])
+        errors = []
+        for conv in attempts:
+            res = subprocess.run(conv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startup_info())
+            if res.returncode == 0 and os.path.isfile(target):
+                if not display_args or attempts.index(conv) > 1:
+                    print("[PB] Thumbnail converted without Maya's view transform.")
+                return target
+            errors.append(res.stderr.decode(errors="replace").strip())
+        raise RuntimeError("Could not convert the render to PNG:\n" + "\n".join(errors))
+    finally:
+        progress.End()
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
@@ -1462,7 +1528,7 @@ if QtWidgets is not None:
             self.delete_btn.clicked.connect(lambda *_: self._delete_library())
             self.thumb_btn = QtWidgets.QPushButton("Render Thumbnail")
             self.thumb_btn.setToolTip("Render the selected MyLibrary preset with the RenderMan\n"
-                                      "Preset Browser preview scene (128 px), saved next to the .mel.")
+                                      "Preset Browser preview scene (512 px), saved next to the .mel.")
             self.thumb_btn.setEnabled(False)
             self.thumb_btn.clicked.connect(lambda *_: self._render_thumbnail())
             lrow = QtWidgets.QHBoxLayout()
