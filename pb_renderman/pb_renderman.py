@@ -934,7 +934,7 @@ def load_library(folder=None):
         except Exception as exc:
             print("[PB] Could not read preset %s: %s" % (fn, exc))
             continue
-        image = next((os.path.join(folder, stem + ext) for ext in (".jpg", ".jpeg", ".png")
+        image = next((os.path.join(folder, stem + ext) for ext in (".png", ".jpg", ".jpeg")
                       if os.path.isfile(os.path.join(folder, stem + ext))), None)
         out.append({"name": display, "category": [LIBRARY_CATEGORY], "_library": True,
                     "_preset": stem, "_path": path, "_attrs": attrs, "_image": image})
@@ -1096,6 +1096,223 @@ def delete_from_library(entry):
             stem, ext = os.path.splitext(os.path.basename(path))
             shutil.move(path, os.path.join(trash, "%s_%s%s" % (stem, stamp, ext)))
     return trash
+
+
+THUMBNAIL_SIZE = 256              # rendered resolution (Preset Browser: 128 px), shown 1:1
+PREVIEW_BOX = 256                 # UI preview area: images shown 1:1, larger ones scaled down, never up
+THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
+THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
+THUMBNAIL_PIXEL_VARIANCE = 0.02   # Preset Browser: 0.01
+THUMBNAIL_HDR = "Annecy"          # RenderMan factory environment map lighting the thumbnails
+THUMBNAIL_HDR_ROTATE_Y = 90.0     # degrees, around the world Y axis (as Maya's rotateY)
+
+
+def thumbnail_hdris():
+    """
+    HDRIs available for thumbnails, as {name: asset.json path}, found under
+    RMANTREE whatever the RenderMan version:
+      - the Preset Browser preview light rigs (rmanAssetResources/assets)
+      - the factory library environment maps (RenderManAssetLibrary/EnvironmentMaps)
+    """
+    rmantree = os.environ.get("RMANTREE")
+    found = {}
+    if not rmantree:
+        return found
+    roots = [os.path.join(rmantree, "lib", "rmanAssetResources", "assets"),
+             os.path.join(rmantree, "lib", "RenderManAssetLibrary", "EnvironmentMaps")]
+    for root in roots:
+        for folder, dirs, files in os.walk(root):
+            if folder.endswith(".rma") and "asset.json" in files:
+                try:
+                    with open(os.path.join(folder, "asset.json"), "r") as f:
+                        if "envMap" not in json.load(f)["RenderManAsset"]["asset"]:
+                            continue
+                except Exception:
+                    continue
+                name = os.path.basename(folder)[:-4]
+                found.setdefault(name, os.path.join(folder, "asset.json"))
+                dirs[:] = []
+    return found
+
+
+def _ocio_display_args(asset):
+    """
+    rmanoiiotool argument sets converting the render (rendering space) for display,
+    with the OCIO config prman rendered with: Maya's display/view first, then the
+    config's default display/view.
+    """
+    from maya import cmds
+    config = (getattr(asset, "ocio", None) or {}).get("path") or os.environ.get("OCIO")
+    if not config or not os.path.isfile(str(config)):
+        return []
+    display = view = ""
+    try:
+        display = cmds.colorManagementPrefs(query=True, displayName=True) or ""
+        view = cmds.colorManagementPrefs(query=True, viewName=True) or ""
+    except Exception:
+        pass
+    base = ["--colorconfig", str(config), "--iscolorspace", "rendering"]
+    sets = []
+    if display and view:
+        sets.append(base + ["--ociodisplay", display, view])
+    sets.append(base + ["--ociodisplay", "", ""])          # config defaults
+    return sets
+
+
+def _rotate_light_rib(rib, degrees):
+    """Rotates the dome light around the world Y axis (Maya rotateY convention)."""
+    if not degrees:
+        return rib
+    c, si = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
+    ry = [[c, 0, -si, 0], [0, 1, 0, 0], [si, 0, c, 0], [0, 0, 0, 1]]   # row-vector matrix, as RIB
+
+    def concat(match):
+        v = [float(x) for x in match.group(1).split()]
+        m = [v[i * 4:i * 4 + 4] for i in range(4)]
+        out = [[sum(m[i][k] * ry[k][j] for k in range(4)) for j in range(4)] for i in range(4)]
+        return "Transform [ %s ]" % " ".join("%.6g" % (0.0 if abs(x) < 1e-9 else x) for row in out for x in row)
+    new, n = re.subn(r"Transform\s*\[\s*((?:[-+0-9.eE]+\s+){15}[-+0-9.eE]+)\s*\]", concat, rib, count=1)
+    if n:
+        return new
+    return re.sub(r'(\n\s*)(Light\s+"PxrDomeLight")', r'\1Rotate %g 0 1 0\1\2' % degrees, rib, count=1)
+
+
+def render_library_thumbnail(entry):
+    """
+    Renders a MyLibrary preset in the RenderMan Preset Browser preview scene
+    (same scene, lighting and renderer), at THUMBNAIL_SIZE px with more samples,
+    converted to Maya's display/view transform, and saves it next to the .mel
+    as <preset>.png. Needs RenderMan for Maya. Returns the image path.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+    import multiprocessing
+    from maya import cmds
+    _ensure_renderman()
+    import rfm2.ui.assets_browser as rab
+    import rman_utils.rman_assets.lib as ral
+    from rman_utils.rman_assets.core import RmanAsset, FilePath
+    from rman_utils.rman_assets.common.external_files import Storage
+    from rman_utils.rman_assets.common.utils import app, startup_info
+
+    # RenderMan's install locations come from its own environment variables,
+    # so the thumbnails follow whatever RenderMan version is loaded.
+    rmantree = os.environ.get("RMANTREE")
+    if not rmantree or not os.path.isdir(rmantree):
+        raise RuntimeError("RMANTREE is not set: is RenderMan for Maya loaded?")
+    rmanbin = os.path.join(rmantree, "bin")
+    tmpdir = tempfile.mkdtemp(prefix="pb_thumb_")
+    undo_state = cmds.undoInfo(query=True, stateWithoutFlush=True)
+    cmds.undoInfo(stateWithoutFlush=False)          # temporary nodes stay out of the undo queue
+    shader = sg = None
+    try:
+        # 1. the material, exported like the Preset Browser does
+        shader = cmds.shadingNode("PxrSurface", asShader=True, name="pbThumb_PxrSurface")
+        sg = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name="pbThumb_SG")
+        cmds.connectAttr(shader + ".outColor", sg + ".surfaceShader", force=True)
+        _apply_preset([shader], entry, [])
+        asset = RmanAsset(assetType="nodeGraph", label=entry["name"], previewType="std",
+                          storage=Storage(Storage.k_asset, asset_path=tmpdir))
+        try:
+            import rfm2.ui.maya_color_manager as mcm
+            mgr = mcm.color_manager()
+            asset.ocio = {"config": mgr.cfg_name, "path": mgr.config_file_path(),
+                          "rules": mgr.conversion_rules, "aliases": mgr.aliases}
+        except Exception:
+            pass
+        rab.parse_node_graph([sg], asset)
+        matdir = FilePath(tmpdir)
+        asset.save(matdir.join("asset.json"))
+        # Maya hands colors over as tuples, which RenderMan's RIB writer silently turns
+        # into empty arrays ("color diffuseColor" []). Reloading the saved json gives
+        # plain lists, as when the Preset Browser imports an asset.
+        asset = RmanAsset()
+        asset.load(matdir.join("asset.json"))
+    finally:
+        for node in (sg, shader):
+            if node and cmds.objExists(node):
+                cmds.delete(node)
+        cmds.undoInfo(stateWithoutFlush=undo_state)
+
+    progress = rab.MayaProgress()
+    try:
+        # 2. the Preset Browser preview scene, in its own folder
+        scene = FilePath(os.path.join(tmpdir, "scene"))
+        shutil.copytree(ral.ribPath(None).os_path(), scene.os_path())
+        # the scene file name carries a version (materialSample_v1.1.rib in RenderMan 27)
+        candidates = sorted(f for f in os.listdir(scene.os_path())
+                            if f.startswith("materialSample") and f.endswith(".rib"))
+        if not candidates:
+            raise RuntimeError("Preview scene not found in %s" % scene.os_path())
+        ribfile = scene.join(candidates[-1])
+        ral._writeMaterialRIB(asset, matdir)
+        ral._writeConfigRIB(scene, FilePath(rmantree), FilePath(os.environ.get("RMSTREE", "")), matdir, "std")
+        ral._writeDisplayChannelRIB(asset, ribfile)
+        ral._writeDisplayFilterRIB(asset, scene)
+        # light rig: a RenderMan factory environment map, written as the Preset Browser
+        # writes its own preview rigs, then rotated
+        hdris = thumbnail_hdris()
+        if THUMBNAIL_HDR in hdris:
+            rig = RmanAsset()
+            rig.load(FilePath(hdris[THUMBNAIL_HDR]))
+            light_rib = rig.getRIB()
+        else:
+            print("[PB] HDRI '%s' not found, using the Preset Browser's." % THUMBNAIL_HDR)
+            ral._writeLightRIB(asset, scene, hdr=ral.previewHdrAsset(ral.getPreviewHdrIdx()))
+            with open(scene.join("m_lightrig_envMap.rib").os_path(), "r") as f:
+                light_rib = f.read()
+        with open(scene.join("m_lightrig_envMap.rib").os_path(), "w") as f:
+            f.write(_rotate_light_rib(light_rib, THUMBNAIL_HDR_ROTATE_Y))
+
+        # 3. higher resolution and more samples than the Preset Browser
+        with open(ribfile.os_path(), "r") as f:
+            rib = f.read()
+        rib = re.sub(r'("int\[2\] FormatResolution"\s*)\[\s*\d+\s+\d+\s*\]',
+                     r'\g<1>[%d %d]' % (THUMBNAIL_SIZE, THUMBNAIL_SIZE), rib)
+        rib = re.sub(r'("int maxsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % THUMBNAIL_MAX_SAMPLES, rib)
+        rib = re.sub(r'("int minsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % THUMBNAIL_MIN_SAMPLES, rib)
+        rib = re.sub(r'("float PixelVariance"\s*)\[[^\]]*\]', r'\g<1>[%g]' % THUMBNAIL_PIXEL_VARIANCE, rib)
+        with open(ribfile.os_path(), "w") as f:
+            f.write(rib)
+
+        # 4. render
+        progress.Start()
+        progress.Update(0, "Rendering thumbnail: %s" % entry["name"])
+        ncpu = max(1, multiprocessing.cpu_count() - 1)
+        cmd = [os.path.join(rmanbin, app("prman")), "-t:%d" % ncpu, "-cwd", scene.os_path(), ribfile.os_path()]
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startup_info())
+        tif = os.path.join(tmpdir, "asset_100.tif")
+        if not os.path.isfile(tif):
+            raise RuntimeError("prman did not produce an image:\n%s"
+                               % proc.stderr.decode(errors="replace")[-1500:])
+
+        # 5. tif (rendering space) -> png (Maya's display/view transform)
+        target = os.path.join(os.path.dirname(entry["_path"]), entry["_preset"] + ".png")
+        oiio = os.path.join(rmanbin, app("rmanoiiotool"))
+        attempts = [[oiio, tif] + args + ["-d", "uint8", "-o", target] for args in _ocio_display_args(asset)]
+        n_ocio = len(attempts)
+        attempts.append([oiio, tif, "--colorconvert", "linear", "sRGB", "-d", "uint8", "-o", target])
+        attempts.append([os.path.join(rmanbin, app("sho")), "-dspy", "png", "-dspyfile", target, tif])
+        errors = []
+        for conv in attempts:
+            res = subprocess.run(conv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startup_info())
+            if res.returncode == 0 and os.path.isfile(target):
+                if attempts.index(conv) >= n_ocio:
+                    print("[PB] Thumbnail converted without an OCIO view transform.")
+                return target
+            errors.append(res.stderr.decode(errors="replace").strip())
+        raise RuntimeError("Could not convert the render to PNG:\n" + "\n".join(errors))
+    finally:
+        progress.End()
+        # keep the last render's working files (RIBs, asset, raw tif) for diagnosis
+        try:
+            last = os.path.join(_cache_path(), "thumbnail_last_render")
+            shutil.rmtree(last, ignore_errors=True)
+            shutil.copytree(tmpdir, last, ignore=shutil.ignore_patterns("*.zip", "*.tex", "*.tx"))
+        except Exception:
+            pass
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def save_to_library(shader, name):
@@ -1287,10 +1504,10 @@ if QtWidgets is not None:
 
             right = QtWidgets.QVBoxLayout()
             self.preview = QtWidgets.QLabel()
-            self.preview.setFixedSize(256, 256)
+            self.preview.setFixedSize(PREVIEW_BOX + 2, PREVIEW_BOX + 2)  # + 1 px border
             self.preview.setAlignment(QtCore.Qt.AlignCenter)
             self.preview.setStyleSheet("background:#222;border:1px solid #444;")
-            right.addWidget(self.preview)
+            right.addWidget(self.preview, 0, QtCore.Qt.AlignHCenter)
             self.swatch = QtWidgets.QLabel()
             self.swatch.setFixedHeight(24)
             right.addWidget(self.swatch)
@@ -1388,14 +1605,20 @@ if QtWidgets is not None:
                                      "as a preset in MyLibrary (" + library_dir(create=False) + ").\n"
                                      "Tip: put a .jpg or .png with the same name next to the .mel\n"
                                      "to get a preview.")
-            self.save_btn.clicked.connect(self._save_library)
+            self.save_btn.clicked.connect(lambda *_: self._save_library())
             self.delete_btn = QtWidgets.QPushButton("Delete from MyLibrary…")
             self.delete_btn.setToolTip("Move the selected MyLibrary preset to the _trash subfolder\n"
                                        "of the library (recoverable).")
             self.delete_btn.setEnabled(False)
-            self.delete_btn.clicked.connect(self._delete_library)
+            self.delete_btn.clicked.connect(lambda *_: self._delete_library())
+            self.thumb_btn = QtWidgets.QPushButton("Render Thumbnail")
+            self.thumb_btn.setToolTip("Render the selected MyLibrary preset with the RenderMan\n"
+                                      "Preset Browser preview scene (%d px), saved next to the .mel." % THUMBNAIL_SIZE)
+            self.thumb_btn.setEnabled(False)
+            self.thumb_btn.clicked.connect(lambda *_: self._render_thumbnail())
             lrow = QtWidgets.QHBoxLayout()
             lrow.addWidget(self.save_btn)
+            lrow.addWidget(self.thumb_btn)
             lrow.addWidget(self.delete_btn)
             right.addLayout(lrow)
             self.status = QtWidgets.QLabel("")
@@ -1477,6 +1700,7 @@ if QtWidgets is not None:
             m = item.data(QtCore.Qt.UserRole)
             cs = self.cs.currentText()
             self.delete_btn.setEnabled(bool(m.get("_library")))
+            self.thumb_btn.setEnabled(bool(m.get("_library")))
             if m.get("_library"):
                 self._show_preset(m)
                 return
@@ -1497,6 +1721,13 @@ if QtWidgets is not None:
             rows.append("<br>" + "<br>".join("• " + n for n in notes))
             self.info.setHtml("<br>".join(rows))
             self._load_image(m)
+
+        def _set_preview(self, pm):
+            """Shows an image 1:1, centred; only scaled down (aspect ratio kept, never stretched) to fit PREVIEW_BOX."""
+            box = PREVIEW_BOX
+            if pm.width() > box or pm.height() > box:
+                pm = pm.scaled(box, box, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+            self.preview.setPixmap(pm)
 
         def _show_preset(self, m):
             a, cs = m["_attrs"], self.cs.currentText()
@@ -1546,10 +1777,27 @@ if QtWidgets is not None:
             if m.get("_image"):
                 pm = QtGui.QPixmap(m["_image"])
                 if not pm.isNull():
-                    self.preview.setPixmap(pm.scaled(256, 256, QtCore.Qt.KeepAspectRatio,
-                                                     QtCore.Qt.SmoothTransformation))
+                    self._set_preview(pm)
                     return
-            self.preview.setText("MyLibrary\n\nAdd %s.jpg next to the .mel\nfor a preview" % m["_preset"])
+            self.preview.setText("MyLibrary\n\nNo thumbnail yet:\nclick Render Thumbnail")
+
+        def _render_thumbnail(self, entry=None):
+            if entry is None:
+                item = self.list.currentItem()
+                entry = item.data(QtCore.Qt.UserRole) if item else None
+            if not entry or not entry.get("_library"):
+                self.status.setText("Pick a MyLibrary preset first.")
+                return
+            self.status.setText("Rendering thumbnail: %s…" % entry["name"])
+            QtWidgets.QApplication.processEvents()
+            try:
+                path = render_library_thumbnail(entry)
+            except Exception as exc:
+                self.status.setText("Thumbnail failed: %s" % exc)
+                raise
+            print("[PB] Thumbnail: %s" % path)
+            self._rebuild(select=entry["_preset"])
+            self.status.setText("Thumbnail rendered: %s" % entry["name"])
 
         def _delete_library(self):
             item = self.list.currentItem()
@@ -1639,7 +1887,7 @@ if QtWidgets is not None:
             self._img_cache[name] = data
             pm = QtGui.QPixmap()
             pm.loadFromData(data)
-            self.preview.setPixmap(pm.scaled(256, 256, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+            self._set_preview(pm)
 
         def _roughness(self):
             return self.rough.value()
