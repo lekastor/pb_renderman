@@ -1100,7 +1100,7 @@ def delete_from_library(entry):
 
 THUMBNAIL_SIZE = 256              # rendered resolution (Preset Browser: 128 px), shown 1:1
 THUMBNAIL_HDR = "Annecy"          # RenderMan factory environment map lighting the thumbnails
-THUMBNAIL_HDR_ROTATE_Y = -90.0    # degrees, around the world Y axis (as Maya's rotateY)
+THUMBNAIL_HDR_ROTATE_Y = 90.0     # degrees, around the world Y axis (as Maya's rotateY)
 
 
 def thumbnail_hdris():
