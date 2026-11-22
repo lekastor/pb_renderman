@@ -112,7 +112,9 @@ folders:
   Preset Browser preview scene (same scene and renderer, lit by
   RenderMan's factory Annecy HDRI, +0.5 stop), at 256 px (the browser
   renders 128 px) with up to 512 samples, converted to Maya's display/view
-  transform, and saves it next to the .mel as a .png. You can also use
+  transform, and saves it next to the .mel as a .png. Ctrl / Shift-click
+  several presets to render their thumbnails one after the other (Esc
+  cancels). You can also use
   your own .png or .jpg with the same name as the .mel.
 - MyLibrary is available even when the database cannot be downloaded.
 

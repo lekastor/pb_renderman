@@ -1368,7 +1368,7 @@ def _run_with_progress(cmd, title, startupinfo=None):
     return "\n".join(log)
 
 
-def render_library_thumbnail(entry):
+def render_library_thumbnail(entry, label=""):
     """
     Renders a MyLibrary preset in the RenderMan Preset Browser preview scene
     (same scene, lighting and renderer), at THUMBNAIL_SIZE px with more samples,
@@ -1470,7 +1470,8 @@ def render_library_thumbnail(entry):
         ncpu = max(1, multiprocessing.cpu_count() - 1)
         cmd = [os.path.join(rmanbin, app("prman")), "-Progress", "-t:%d" % ncpu,
                "-cwd", scene.os_path(), ribfile.os_path()]
-        output = _run_with_progress(cmd, "Rendering thumbnail: %s" % entry["name"], startup_info())
+        output = _run_with_progress(cmd, "Rendering thumbnail%s: %s" % (label and " " + label, entry["name"]),
+                                    startup_info())
         tif = os.path.join(tmpdir, "asset_100.tif")
         if not os.path.isfile(tif):
             raise RuntimeError("prman did not produce an image:\n%s" % output[-1500:])
@@ -1699,6 +1700,8 @@ if QtWidgets is not None:
             left.addLayout(grid)
             self.list = QtWidgets.QListWidget()
             self.list.currentItemChanged.connect(self._on_select)
+            # Ctrl / Shift-click: several presets, e.g. to render their thumbnails in a row
+            self.list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
             self.list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)  # MyLibrary: Rename / Thumbnail / Delete
             self.list.customContextMenuRequested.connect(self._list_menu)
             left.addWidget(self.list)
@@ -1828,8 +1831,9 @@ if QtWidgets is not None:
             self.update_btn.setEnabled(False)
             self.update_btn.clicked.connect(lambda *_: self._update_library())
             self.thumb_btn = QtWidgets.QPushButton("Render Thumbnail")
-            self.thumb_btn.setToolTip("Render the selected MyLibrary preset with the RenderMan\n"
-                                      "Preset Browser preview scene (%d px), saved next to the .mel." % THUMBNAIL_SIZE)
+            self.thumb_btn.setToolTip("Render the selected MyLibrary presets with the RenderMan\n"
+                                      "Preset Browser preview scene (%d px), saved next to the .mel.\n"
+                                      "Ctrl / Shift-click in the list to render several in a row." % THUMBNAIL_SIZE)
             self.thumb_btn.setEnabled(False)
             self.thumb_btn.clicked.connect(lambda *_: self._render_thumbnail())
             lrow = QtWidgets.QHBoxLayout()
@@ -1944,11 +1948,17 @@ if QtWidgets is not None:
             self.status.setText("%d materials, %d in MyLibrary" % (len(self.materials) - len(self.library), len(self.library)))
             self.status.setToolTip("MyLibrary folder: " + library_dir())
             if select:
+                wanted = select if isinstance(select, (list, tuple)) else [select]
+                first = None
                 for i in range(self.list.count()):
-                    m = self.list.item(i).data(QtCore.Qt.UserRole)
-                    if m.get("_library") and select in (m.get("_path"), m.get("_preset")):
-                        self.list.setCurrentRow(i)
-                        break
+                    it = self.list.item(i)
+                    m = it.data(QtCore.Qt.UserRole)
+                    if m.get("_library") and (m.get("_path") in wanted or m.get("_preset") in wanted):
+                        if first is None:
+                            first = it
+                            self.list.setCurrentItem(it)     # also clears the previous selection
+                        else:
+                            it.setSelected(True)
 
         def _filter(self, *_):
             txt = self.search.text().lower().strip()
@@ -2064,26 +2074,48 @@ if QtWidgets is not None:
                     return
             self.preview.setText("MyLibrary\n\nNo thumbnail yet:\nclick Render Thumbnail")
 
+        def _selected_library(self):
+            """MyLibrary presets selected in the list, in list order."""
+            items = sorted(self.list.selectedItems(), key=self.list.row)
+            return [it.data(QtCore.Qt.UserRole) for it in items if it.data(QtCore.Qt.UserRole).get("_library")]
+
         def _render_thumbnail(self, entry=None):
-            if entry is None:
+            """Renders the thumbnails of the selected MyLibrary presets, one after the other."""
+            entries = [entry] if entry else self._selected_library()
+            if not entries:
                 item = self.list.currentItem()
-                entry = item.data(QtCore.Qt.UserRole) if item else None
-            if not entry or not entry.get("_library"):
+                m = item.data(QtCore.Qt.UserRole) if item else None
+                entries = [m] if m and m.get("_library") else []
+            if not entries:
                 self.status.setText("Pick a MyLibrary preset first.")
                 return
-            self.status.setText("Rendering thumbnail: %s…" % entry["name"])
-            QtWidgets.QApplication.processEvents()
-            try:
-                path = render_library_thumbnail(entry)
-            except RenderCancelled:
-                self.status.setText("Thumbnail cancelled: %s" % entry["name"])
-                return
-            except Exception as exc:
-                self.status.setText("Thumbnail failed: %s" % exc)
-                raise
-            print("[PB] Thumbnail: %s" % path)
-            self._rebuild(select=entry["_path"])
-            self.status.setText("Thumbnail rendered: %s" % entry["name"])
+            done, failed, n = [], [], len(entries)
+            for i, e in enumerate(entries):
+                label = "(%d/%d)" % (i + 1, n) if n > 1 else ""
+                self.status.setText("Rendering thumbnail %s: %s…" % (label, e["name"]))
+                QtWidgets.QApplication.processEvents()
+                try:
+                    path = render_library_thumbnail(e, label)
+                except RenderCancelled:
+                    self.status.setText("Thumbnails cancelled after %d of %d." % (len(done), n))
+                    break
+                except Exception as exc:
+                    import traceback
+                    traceback.print_exc()
+                    failed.append("%s (%s)" % (e["name"], exc))
+                    if n == 1:
+                        self.status.setText("Thumbnail failed: %s" % exc)
+                        break
+                    continue
+                print("[PB] Thumbnail: %s" % path)
+                done.append(e["_path"])
+            else:
+                msg = "%d thumbnail(s) rendered" % len(done)
+                if failed:
+                    msg += ", %d failed (see the Script Editor)" % len(failed)
+                    print("[PB] Thumbnails failed: " + "; ".join(failed))
+                self.status.setText(msg + ".")
+            self._rebuild(select=done or [e["_path"] for e in entries])
 
         def _list_menu(self, pos):
             """Right-click on a MyLibrary preset: Rename / Render Thumbnail / Delete."""
@@ -2091,10 +2123,15 @@ if QtWidgets is not None:
             m = item.data(QtCore.Qt.UserRole) if item else None
             if not m or not m.get("_library"):
                 return
-            self.list.setCurrentItem(item)
+            if not item.isSelected():
+                self.list.setCurrentItem(item)
+            else:   # keep the multi-selection; Rename / Delete act on the clicked preset
+                self.list.setCurrentItem(item, QtCore.QItemSelectionModel.NoUpdate)
+            n = len(self._selected_library())
             menu = QtWidgets.QMenu(self.list)
             menu.addAction("Rename...", lambda: self._rename_library())
-            menu.addAction("Render Thumbnail", lambda: self._render_thumbnail())
+            menu.addAction("Render Thumbnails (%d)" % n if n > 1 else "Render Thumbnail",
+                           lambda: self._render_thumbnail())
             move = menu.addMenu("Move to category")
             for c in [""] + library_categories():
                 act = move.addAction(c or "No category")
