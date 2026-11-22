@@ -18,6 +18,8 @@ Installation:
            import pb_renderman; pb_renderman.show()
        (drag these lines onto a shelf to make a button)
        show() reloads the tool each time: updates need no restart.
+    3. Optional: pb_renderman.install_shelf_button() adds a button with the
+       tool's icon to the current shelf.
 
 Usage:
     - Pick a material in the list (search + category filter).
@@ -1130,6 +1132,38 @@ def save_to_library(shader, name):
 
 
 # --------------------------------------------------------------------------- #
+#  Icon and shelf button
+# --------------------------------------------------------------------------- #
+
+def icon_path(suffix=""):
+    """pb_renderman icon next to this file (suffix "", "_150" or "_200")."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pb_renderman%s.png" % suffix)
+    return path if os.path.isfile(path) else None
+
+
+def install_shelf_button(shelf=None):
+    """
+    Adds a pb_renderman button with its icon to a shelf (the current one by
+    default), replacing a previous pb_renderman button on that shelf.
+    Maya saves the shelf when it quits.
+    """
+    from maya import cmds, mel
+    if not shelf:
+        top = mel.eval("$pb_tmp = $gShelfTopLevel")
+        shelf = cmds.tabLayout(top, query=True, selectTab=True)
+    for child in cmds.shelfLayout(shelf, query=True, childArray=True) or []:
+        if cmds.objectTypeUI(child) == "shelfButton" and \
+                cmds.shelfButton(child, query=True, label=True) == "pb_renderman":
+            cmds.deleteUI(child)
+    cmds.shelfButton(parent=shelf, label="pb_renderman", imageOverlayLabel="",
+                     annotation="Physically Based -> PxrSurface",
+                     image=icon_path() or "commandButton.png",
+                     command="import pb_renderman\npb_renderman.show()", sourceType="python")
+    print("[PB] Shelf button added to '%s'." % shelf)
+    return shelf
+
+
+# --------------------------------------------------------------------------- #
 #  Qt UI
 # --------------------------------------------------------------------------- #
 
@@ -1211,6 +1245,12 @@ if QtWidgets is not None:
             self.setWindowTitle("Physically Based → PxrSurface  v%s — %s" % (__version__, __author__))
             self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
             self.resize(720, 520)
+            icon = QtGui.QIcon()
+            for suffix in ("", "_150", "_200"):
+                if icon_path(suffix):
+                    icon.addFile(icon_path(suffix))
+            if not icon.isNull():
+                self.setWindowIcon(icon)
             self.materials = []
             self._img_cache = {}
             self.sig = _Signals()

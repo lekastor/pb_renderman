@@ -34,6 +34,8 @@ INSTALLATION
          __init__.py
          pb_renderman.py
          README.txt
+         pb_renderman.png, pb_renderman_150.png,
+         pb_renderman_200.png, pb_renderman.svg      (icon)
 
 2. In the Script Editor (Python tab), paste these two lines exactly as
    they are, without leading spaces (Python refuses indented lines), and
@@ -42,8 +44,12 @@ INSTALLATION
 import pb_renderman
 pb_renderman.show()
 
-3. Optional: select these two lines and middle-mouse drag them onto a shelf
-   to make a button.
+3. Optional, a shelf button with the tool's icon: run these two lines once.
+   The button is added to the current shelf, and Maya saves it when it
+   quits.
+
+import pb_renderman
+pb_renderman.install_shelf_button()
 
 If an older single-file version (scripts\pb_renderman.py) was used in the
 current Maya session, delete that file and restart Maya once.

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <radialGradient id="metal" cx="0.35" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#fff3c4"/><stop offset="0.35" stop-color="#f0b941"/>
+      <stop offset="0.75" stop-color="#9a5f12"/><stop offset="1" stop-color="#3d2304"/>
+    </radialGradient>
+    <radialGradient id="glass" cx="0.62" cy="0.7" r="0.7">
+      <stop offset="0" stop-color="#7fe3ff"/><stop offset="0.55" stop-color="#1f7fb0"/>
+      <stop offset="1" stop-color="#0b2a44"/>
+    </radialGradient>
+    <clipPath id="left"><polygon points="0,0 32,0 0,32"/></clipPath>
+    <clipPath id="right"><polygon points="32,0 32,32 0,32"/></clipPath>
+  </defs>
+  <ellipse cx="16" cy="29.2" rx="10" ry="1.8" fill="#000" opacity="0.35"/>
+  <circle cx="16" cy="15" r="13" fill="url(#metal)" clip-path="url(#left)"/>
+  <circle cx="16" cy="15" r="13" fill="url(#glass)" clip-path="url(#right)"/>
+  <path d="M7.23 23.77 A12.4 12.4 0 0 0 27.98 11.79" fill="none" stroke="#bff4ff" stroke-width="1.1" opacity="0.8"/>
+  <line x1="6.8" y1="24.2" x2="25.2" y2="5.8" stroke="#0d0d0d" stroke-width="0.9" opacity="0.55"/>
+  <ellipse cx="10.4" cy="9.4" rx="3.1" ry="2.1" transform="rotate(-35 10.4 9.4)" fill="#fff" opacity="0.9"/>
+  <circle cx="16" cy="15" r="13" fill="none" stroke="#111" stroke-width="0.8" opacity="0.6"/>
+</svg>
