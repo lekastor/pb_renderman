@@ -150,8 +150,8 @@ Reset other attributes to defaults  (default: on)
   Apply only: resets every unconnected attribute to its default before
   applying.
 
-Click an option's name to reset it to its default value.
-Right-click a checkbox for the same.
+Right-click an option (its name or its control) to reset it to its
+default value.
 
 Help menu: the User Guide (F1), links to MyLibrary, the Physically Based
 website and GitHub, and About (version, credits, license).

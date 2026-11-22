@@ -76,7 +76,7 @@ The **MyLibrary** category lists your own PxrSurface presets, stored in their ow
 | Non-directional (faster SSS / Glass Single Scatter) | off | Replaces directional scattering by isotropic scattering: reduced scattering with `g` = 0 in the glass interior, Directionality 0 for subsurface and single scatter. Similar look, much faster. Also applies to MyLibrary presets (the files are not changed). |
 | Reset other attributes to defaults | on | *Apply* only: resets every unconnected attribute to its default before applying. |
 
-Click an option's name to reset it to its default value; right-click a checkbox for the same.
+Right-click an option (its name or its control) to reset it to its default value.
 
 **Help** menu: the *User Guide* (F1), links to MyLibrary, the Physically Based website and GitHub, and *About* (version, credits, license).
 

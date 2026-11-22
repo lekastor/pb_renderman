@@ -1612,7 +1612,7 @@ and assign it to the selected objects / faces.</li>
 <p>Each action is one undo step. Attributes connected to textures are never overwritten.</p>
 
 <h3>Options</h3>
-<p>Click an option's name to reset it to its default value; right-click a checkbox for the same.</p>
+<p>Right-click an option (its name or its control) to reset it to its default value.</p>
 <table border="0" cellspacing="0" cellpadding="3">
 <tr><td><b>Color space</b></td><td>Detected from Maya's rendering space (ACEScg or linear sRGB).</td></tr>
 <tr><td><b>Specular roughness</b></td><td>Primary Specular roughness (default %(rough)g, glass 0.001).</td></tr>
@@ -1740,38 +1740,40 @@ if QtWidgets is not None:
         loaded = QtCore.Signal(object, object)       # (materials, error)
         image = QtCore.Signal(str, bytes)            # (name, data)
 
-    class _ResetLabel(QtWidgets.QLabel):
-        """Form label: clicking it resets its control to the default value."""
-        def __init__(self, text, reset_fn, parent=None):
-            super(_ResetLabel, self).__init__(text, parent)
-            self._reset_fn = reset_fn
-            self.setCursor(QtCore.Qt.PointingHandCursor)
-            self.setToolTip("Click to reset to default value")
+    def _reset_menu(widgets, reset_fn, default_text=""):
+        """
+        Right-click on any of widgets -> 'Reset to default value'. Text fields keep their
+        usual Cut / Copy / Paste menu, with the reset entry added at the bottom.
+        """
+        label = "Reset to default value" + (" (%s)" % default_text if default_text else "")
 
-        def mousePressEvent(self, event):
-            if event.button() == QtCore.Qt.LeftButton:
-                self._reset_fn()
-            super(_ResetLabel, self).mousePressEvent(event)
+        def show(w, pos):
+            # line edits (incl. the one inside a spin box) keep Cut / Copy / Paste
+            m = w.createStandardContextMenu() if isinstance(w, QtWidgets.QLineEdit) else QtWidgets.QMenu(w)
+            if m.actions():
+                m.addSeparator()
+            m.addAction(label).triggered.connect(lambda *_: reset_fn())
+            pt = w.mapToGlobal(pos)
+            m.exec_(pt) if hasattr(m, "exec_") else m.exec(pt)
 
-        def enterEvent(self, event):
-            f = self.font(); f.setUnderline(True); self.setFont(f)
-            super(_ResetLabel, self).enterEvent(event)
-
-        def leaveEvent(self, event):
-            f = self.font(); f.setUnderline(False); self.setFont(f)
-            super(_ResetLabel, self).leaveEvent(event)
+        for w in widgets:
+            targets = [w]
+            if isinstance(w, QtWidgets.QAbstractSpinBox) and w.findChild(QtWidgets.QLineEdit):
+                targets.append(w.findChild(QtWidgets.QLineEdit))
+            for t in targets:
+                t.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+                t.customContextMenuRequested.connect(lambda pos, t=t: show(t, pos))
+            tip = w.toolTip()
+            w.setToolTip((tip + "\n" if tip else "") + "Right-click: reset to default value")
 
     def _checkbox_reset_menu(cb, default):
-        """Right-click on a checkbox -> 'Reset to default value'."""
-        cb.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        _reset_menu([cb], lambda: cb.setChecked(default), "on" if default else "off")
 
-        def menu(pos):
-            m = QtWidgets.QMenu(cb)
-            act = m.addAction("Reset to default value (%s)" % ("on" if default else "off"))
-            act.triggered.connect(lambda: cb.setChecked(default))
-            m.exec_(cb.mapToGlobal(pos)) if hasattr(m, "exec_") else m.exec(cb.mapToGlobal(pos))
-        cb.customContextMenuRequested.connect(menu)
-        cb.setToolTip((cb.toolTip() + "\n" if cb.toolTip() else "") + "Right-click: reset to default value")
+    class _ResetLabel(QtWidgets.QLabel):
+        """Form label: right-click it (or its control) to reset the control to its default value."""
+        def __init__(self, text, reset_fn, controls=(), default_text="", parent=None):
+            super(_ResetLabel, self).__init__(text, parent)
+            _reset_menu([self] + list(controls), reset_fn, default_text)
 
     class PBWindow(QtWidgets.QDialog):
         def __init__(self, parent=None):
@@ -1817,9 +1819,11 @@ if QtWidgets is not None:
             self.hide_pb = QtWidgets.QCheckBox("Hide")
             self.hide_pb.setToolTip("Hide the Physically Based materials")
             self.hide_pb.toggled.connect(self._filter)
+            _checkbox_reset_menu(self.hide_pb, False)
             self.hide_lib = QtWidgets.QCheckBox("Hide")
             self.hide_lib.setToolTip("Hide the MyLibrary presets")
             self.hide_lib.toggled.connect(self._filter)
+            _checkbox_reset_menu(self.hide_lib, False)
             grid.addWidget(QtWidgets.QLabel("Physically Based:"), 0, 0)
             grid.addWidget(self.cat, 0, 1)
             grid.addWidget(self.hide_pb, 0, 2)
@@ -1868,7 +1872,8 @@ if QtWidgets is not None:
             detected = detect_colorspace()
             self.cs.setCurrentText(detected or "acescg")
             self.cs.currentIndexChanged.connect(lambda *_: self._on_select(self.list.currentItem()))
-            form.addRow(_ResetLabel("Color space:", lambda: self.cs.setCurrentText(detect_colorspace() or "acescg")),
+            form.addRow(_ResetLabel("Color space:", lambda: self.cs.setCurrentText(detect_colorspace() or "acescg"),
+                                    [self.cs], "detected"),
                         self.cs)
             rs = maya_rendering_space() or "color management off"
             self.rs_label = QtWidgets.QLabel("Maya rendering space: <b>%s</b>%s" % (
@@ -1894,16 +1899,19 @@ if QtWidgets is not None:
             rrow.addWidget(self.rough)
             rrow.addWidget(self.rough_db)
             _checkbox_reset_menu(self.rough_db, True)
+            _reset_menu([self.rough], lambda: self.rough.setValue(DEFAULT_SPEC_ROUGHNESS), "%g" % DEFAULT_SPEC_ROUGHNESS)
             form.addRow(_ResetLabel("Specular roughness:",
                                     lambda: (self.rough_db.setChecked(True),
-                                             self.rough.setValue(DEFAULT_SPEC_ROUGHNESS))), rrow)
+                                             self.rough.setValue(DEFAULT_SPEC_ROUGHNESS)),
+                                    default_text="%g, database value on" % DEFAULT_SPEC_ROUGHNESS), rrow)
             self.sss = QtWidgets.QDoubleSpinBox()
             self.sss.setDecimals(4)
             self.sss.setRange(0.0001, 1000)
             self.sss.setValue(DEFAULT_SSS_SCALE)
             self.sss.setToolTip("Multiplier on the database subsurface radius (mm) -> subsurfaceDmfp (default 10)")
             self.sss.valueChanged.connect(lambda *_: self._on_select(self.list.currentItem()))
-            form.addRow(_ResetLabel("SSS scale:", lambda: self.sss.setValue(DEFAULT_SSS_SCALE)), self.sss)
+            form.addRow(_ResetLabel("SSS scale:", lambda: self.sss.setValue(DEFAULT_SSS_SCALE),
+                                    [self.sss], "%g" % DEFAULT_SSS_SCALE), self.sss)
             self.ext = QtWidgets.QDoubleSpinBox()
             self.ext.setDecimals(3)
             self.ext.setRange(0.001, 100000)
@@ -1912,7 +1920,7 @@ if QtWidgets is not None:
                                 "Database coefficients are per cm: 1 for a scene in cm, 100 in meters.\n"
                                 "Raise it to exaggerate the tint on small objects.")
             self.ext.valueChanged.connect(lambda *_: self._on_select(self.list.currentItem()))
-            form.addRow(_ResetLabel("Extinction scale:", lambda: self.ext.setValue(1.0)), self.ext)
+            form.addRow(_ResetLabel("Extinction scale:", lambda: self.ext.setValue(1.0), [self.ext], "1"), self.ext)
             self.reduce = QtWidgets.QCheckBox("Non-directional (faster SSS / Glass Single Scatter)")
             self.reduce.setToolTip("Replace directional (forward) scattering by isotropic scattering.\n"
                                    "Similar look, much faster. Applies to the database and to MyLibrary\n"
