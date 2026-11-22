@@ -14,12 +14,10 @@ roughness when it is meaningful (not 0 / 0.5).
 Installation:
     1. Copy the pb_renderman folder (this file, __init__.py, README.txt) to
        Documents/maya/scripts/
-    2. In Maya (Script Editor, Python tab):
-           import pb_renderman; pb_renderman.show()
-       (drag these lines onto a shelf to make a button)
-       show() reloads the tool each time: updates need no restart.
-    3. Optional: pb_renderman.install_shelf_button() adds a button with the
-       tool's icon to the current shelf.
+    2. Create the shelf button once (Script Editor, Python tab):
+           import pb_renderman; pb_renderman.install_shelf_button()
+    3. Click the button. It runs pb_renderman.show(), which reloads the tool
+       each time: updates need no restart.
 
 Usage:
     - Pick a material in the list (search + category filter).

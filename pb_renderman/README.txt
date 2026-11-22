@@ -37,25 +37,24 @@ INSTALLATION
          pb_renderman.png, pb_renderman_150.png,
          pb_renderman_200.png, pb_renderman.svg      (icon)
 
-2. In the Script Editor (Python tab), paste these two lines exactly as
-   they are, without leading spaces (Python refuses indented lines), and
-   run them with Ctrl+Enter:
-
-import pb_renderman
-pb_renderman.show()
-
-3. Optional, a shelf button with the tool's icon: run these two lines once.
-   The button is added to the current shelf, and Maya saves it when it
-   quits.
+2. Create the shelf button (once). In the Script Editor (Python tab),
+   paste these two lines exactly as they are, without leading spaces
+   (Python refuses indented lines), and run them with Ctrl+Enter:
 
 import pb_renderman
 pb_renderman.install_shelf_button()
 
+   A button with the tool's icon is added to the current shelf; Maya saves
+   it when it quits.
+
+3. Click the button to open the tool.
+
+The button runs "import pb_renderman; pb_renderman.show()", which you can
+also run from the Script Editor. It reloads the tool each time, so an
+updated pb_renderman.py is picked up without restarting Maya.
+
 If an older single-file version (scripts\pb_renderman.py) was used in the
 current Maya session, delete that file and restart Maya once.
-
-show() reloads the tool each time, so an updated pb_renderman.py is picked
-up without restarting Maya.
 
 
 USAGE

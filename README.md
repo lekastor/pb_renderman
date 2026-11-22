@@ -29,19 +29,15 @@ Author: **Julien Duval** · Version **1.0.0** · License **MIT**
        README.txt
        pb_renderman.png, pb_renderman_150.png, pb_renderman_200.png, pb_renderman.svg   (icon)
    ```
-2. In the Script Editor (Python tab):
-   ```python
-   import pb_renderman
-   pb_renderman.show()
-   ```
-3. Optional, a shelf button with the tool's icon:
+2. Create the shelf button (once), in the Script Editor (Python tab):
    ```python
    import pb_renderman
    pb_renderman.install_shelf_button()
    ```
-   It is added to the current shelf, and Maya saves it when it quits.
+   A button with the tool's icon is added to the current shelf; Maya saves it when it quits.
+3. Click the button to open the tool.
 
-`show()` reloads the tool each time, so an updated `pb_renderman.py` is picked up without restarting Maya.
+The button runs `import pb_renderman; pb_renderman.show()`, which you can also run from the Script Editor. It reloads the tool each time, so an updated `pb_renderman.py` is picked up without restarting Maya.
 
 If an older single-file version (`scripts\pb_renderman.py`) was used in the current Maya session, delete that file and restart Maya once.
 
