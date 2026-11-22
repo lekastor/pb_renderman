@@ -93,6 +93,8 @@ folders:
   Maya's attribute-preset format (.mel), so you can also copy one into
   Maya's own preset folder if you want it in the Attribute Editor's
   Presets menu.
+- Right-click a MyLibrary preset in the list: Rename..., Render Thumbnail or
+  Delete.... Renaming also renames its preview image.
 - "Delete from MyLibrary..." moves the selected preset (and its preview
   image) to the _trash subfolder of the library, so it can be restored.
 - "Render Thumbnail" renders the selected preset in RenderMan's own

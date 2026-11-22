@@ -1110,6 +1110,29 @@ def delete_from_library(entry):
     return trash
 
 
+def rename_in_library(entry, new_name):
+    """
+    Renames a preset: its .mel and its preview images (.png/.jpg/.jpeg with the
+    same name). Returns the new file stem. Refuses to overwrite another preset.
+    """
+    stem = preset_file_name(new_name)
+    if not stem:
+        raise ValueError("Invalid preset name.")
+    folder = os.path.dirname(entry["_path"])
+    old = entry["_preset"]
+    if stem == old:
+        return stem
+    target = os.path.join(folder, stem + ".mel")
+    # Windows is case-insensitive: a case-only rename finds the preset itself
+    if os.path.exists(target) and stem.lower() != old.lower():
+        raise ValueError("A preset named '%s' already exists." % stem[len(PRESET_PREFIX):])
+    for ext in (".mel", ".png", ".jpg", ".jpeg"):
+        src = os.path.join(folder, old + ext)
+        if os.path.isfile(src):
+            os.rename(src, os.path.join(folder, stem + ext))
+    return stem
+
+
 THUMBNAIL_SIZE = 256              # rendered resolution (Preset Browser: 128 px), shown 1:1
 PREVIEW_BOX = 256                 # UI preview area: images shown 1:1, larger ones scaled down, never up
 THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
@@ -1505,6 +1528,8 @@ if QtWidgets is not None:
             left.addLayout(row)
             self.list = QtWidgets.QListWidget()
             self.list.currentItemChanged.connect(self._on_select)
+            self.list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+            self.list.customContextMenuRequested.connect(self._list_menu)
             left.addWidget(self.list)
             row2 = QtWidgets.QHBoxLayout()
             b_ref = QtWidgets.QPushButton("Refresh")
@@ -1810,6 +1835,40 @@ if QtWidgets is not None:
             print("[PB] Thumbnail: %s" % path)
             self._rebuild(select=entry["_preset"])
             self.status.setText("Thumbnail rendered: %s" % entry["name"])
+
+        def _list_menu(self, pos):
+            """Right-click on a MyLibrary preset: Rename / Render Thumbnail / Delete."""
+            item = self.list.itemAt(pos)
+            m = item.data(QtCore.Qt.UserRole) if item else None
+            if not m or not m.get("_library"):
+                return
+            self.list.setCurrentItem(item)
+            menu = QtWidgets.QMenu(self.list)
+            menu.addAction("Rename...", lambda: self._rename_library())
+            menu.addAction("Render Thumbnail", lambda: self._render_thumbnail())
+            menu.addSeparator()
+            menu.addAction("Delete...", lambda: self._delete_library())
+            pt = self.list.viewport().mapToGlobal(pos)
+            menu.exec_(pt) if hasattr(menu, "exec_") else menu.exec(pt)
+
+        def _rename_library(self):
+            item = self.list.currentItem()
+            m = item.data(QtCore.Qt.UserRole) if item else None
+            if not m or not m.get("_library"):
+                self.status.setText("Pick a MyLibrary preset to rename.")
+                return
+            name, ok = QtWidgets.QInputDialog.getText(self, "Rename MyLibrary preset",
+                                                      "New name for '%s':" % m["name"], text=m["name"])
+            if not ok or not name.strip():
+                return
+            try:
+                stem = rename_in_library(m, name)
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(self, "Rename MyLibrary preset", str(exc))
+                return
+            print("[PB] Renamed %s -> %s" % (m["_preset"], stem))
+            self._rebuild(select=stem)
+            self.status.setText("Renamed: %s -> %s" % (m["name"], stem[len(PRESET_PREFIX):]))
 
         def _delete_library(self):
             item = self.list.currentItem()
