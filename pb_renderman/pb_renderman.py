@@ -565,7 +565,7 @@ def build_pxr_values(mat, colorspace="acescg", sss_scale=DEFAULT_SSS_SCALE, roug
         "diffuseGain": 1.0, "diffuseRoughness": 0.0,
         "refractionGain": 0.0,
         "reflectionGain": 0.0,           # Glass lobe reflection off unless transmissive
-        "subsurfaceGain": 0.0, "subsurfaceDirectionality": 0.0,
+        "subsurfaceGain": 0.0, "subsurfaceDirectionality": 0.0, "subsurfaceResolveSelfIntersections": 0,
         "extinction": [0.0, 0.0, 0.0], "ssAlbedo": [0.0, 0.0, 0.0], "g": 0.0, "multiScatter": 0,
         "refractionColor": [1.0, 1.0, 1.0],
         "iridescenceFaceGain": 0.0, "iridescenceEdgeGain": 0.0,
@@ -636,11 +636,12 @@ def build_pxr_values(mat, colorspace="acescg", sss_scale=DEFAULT_SSS_SCALE, roug
         if _is_vec3(radius) and max(radius) > 0:
             mx = float(max(radius))
             v["subsurfaceGain"] = 1.0
+            v["subsurfaceResolveSelfIntersections"] = 1     # see _subsurface_rules
             v["subsurfaceColor"] = color
             v["subsurfaceDmfp"] = mx * sss_scale
             v["subsurfaceDmfpColor"] = [float(r) / mx for r in radius]
             v["diffuseGain"] = 0.0
-            notes.append("SSS: max radius %.3g mm x %.3g" % (mx, sss_scale))
+            notes.append("SSS: max radius %.3g mm x %.3g, Resolve Self Intersections ON" % (mx, sss_scale))
             g_sss = next((g for prefix, g in SSS_DIRECTIONALITY.items()
                           if mat.get("name", "").startswith(prefix)), None)
             if g_sss:
@@ -1178,9 +1179,17 @@ def non_directional(attrs):
     return a, notes
 
 
+def _subsurface_rules(attrs):
+    """Subsurface on (subsurfaceGain > 0) -> Resolve Self Intersections on."""
+    if float(attrs.get("subsurfaceGain", 0) or 0) > 0 and not attrs.get("subsurfaceResolveSelfIntersections"):
+        attrs = dict(attrs)
+        attrs["subsurfaceResolveSelfIntersections"] = 1
+    return attrs
+
+
 def _apply_preset(shaders, entry, log, nondirectional=False):
     from maya import cmds
-    attrs = entry["_attrs"]
+    attrs = _subsurface_rules(entry["_attrs"])
     if nondirectional:
         attrs, notes = non_directional(attrs)
         log.extend("  " + n for n in notes)
@@ -1607,6 +1616,8 @@ def save_to_library(shader, name, libcat="", path=None):
                 lines.append('blendAttrStr "%s" "%s"; ' % (attr, val.replace("\\", "\\\\").replace('"', '\\"')))
             elif kind in _NUMERIC_TYPES:
                 val = cmds.getAttr(plug)
+                if attr == "subsurfaceResolveSelfIntersections" and cmds.getAttr(shader + ".subsurfaceGain") > 0:
+                    val = 1                                   # see _subsurface_rules
                 lines.append('blendAttr "%s" %s; ' % (attr, ("%.10g" % val) if isinstance(val, float) else int(val)))
         except Exception:
             continue

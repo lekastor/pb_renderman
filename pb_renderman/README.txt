@@ -194,7 +194,9 @@ Transmissive materials (glass, water, liquids, plastics, gems)
 
 Subsurface
   subsurfaceColor from the color, subsurfaceDmfp / subsurfaceDmfpColor
-  from the database radius. Skin uses a Directionality of 0.8.
+  from the database radius. Skin uses a Directionality of 0.8. Whenever
+  subsurface is on (subsurfaceGain > 0, database materials and MyLibrary
+  presets alike), Resolve Self Intersections is enabled.
 
 Thin film (soap bubble, pearl, anodized titanium)
   Iridescence lobe in Physical mode with the database thickness.

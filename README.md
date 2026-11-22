@@ -101,7 +101,7 @@ Right-click an option (its name or its control) to reset it to its default value
 - `ssAlbedo` and `g` (the interior *g0* parameter) from the database scattering and anisotropy
 - `multiScatter` enabled whenever the single-scatter albedo is above 0
 
-**Subsurface**: `subsurfaceColor` from the color, `subsurfaceDmfp` / `subsurfaceDmfpColor` from the database radius. Skin uses a Directionality of 0.8.
+**Subsurface**: `subsurfaceColor` from the color, `subsurfaceDmfp` / `subsurfaceDmfpColor` from the database radius. Skin uses a Directionality of 0.8. Whenever subsurface is on (`subsurfaceGain` > 0, database materials and MyLibrary presets alike), *Resolve Self Intersections* is enabled.
 
 **Thin film** (soap bubble, pearl, anodized titanium): Iridescence lobe in Physical mode with the database thickness. PxrSurface has no film IOR, so its face gain is set to the film's normal-incidence reflectance `((n − 1) / (n + 1))²`.
 
