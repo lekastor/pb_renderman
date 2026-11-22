@@ -1098,7 +1098,7 @@ def delete_from_library(entry):
     return trash
 
 
-THUMBNAIL_SIZE = 256              # rendered resolution (Preset Browser: 128 px), shown 1:1
+THUMBNAIL_SIZE = 100              # rendered resolution (Preset Browser: 128 px), shown 1:1
 THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
 THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
 THUMBNAIL_PIXEL_VARIANCE = 0.02   # Preset Browser: 0.01
@@ -1503,10 +1503,10 @@ if QtWidgets is not None:
 
             right = QtWidgets.QVBoxLayout()
             self.preview = QtWidgets.QLabel()
-            self.preview.setFixedSize(256, 256)
+            self.preview.setFixedSize(THUMBNAIL_SIZE + 2, THUMBNAIL_SIZE + 2)  # + 1 px border
             self.preview.setAlignment(QtCore.Qt.AlignCenter)
             self.preview.setStyleSheet("background:#222;border:1px solid #444;")
-            right.addWidget(self.preview)
+            right.addWidget(self.preview, 0, QtCore.Qt.AlignHCenter)
             self.swatch = QtWidgets.QLabel()
             self.swatch.setFixedHeight(24)
             right.addWidget(self.swatch)
@@ -1612,7 +1612,7 @@ if QtWidgets is not None:
             self.delete_btn.clicked.connect(lambda *_: self._delete_library())
             self.thumb_btn = QtWidgets.QPushButton("Render Thumbnail")
             self.thumb_btn.setToolTip("Render the selected MyLibrary preset with the RenderMan\n"
-                                      "Preset Browser preview scene (256 px), saved next to the .mel.")
+                                      "Preset Browser preview scene (%d px), saved next to the .mel." % THUMBNAIL_SIZE)
             self.thumb_btn.setEnabled(False)
             self.thumb_btn.clicked.connect(lambda *_: self._render_thumbnail())
             lrow = QtWidgets.QHBoxLayout()
@@ -1722,8 +1722,8 @@ if QtWidgets is not None:
             self._load_image(m)
 
         def _set_preview(self, pm):
-            """Shows an image 1:1, only scaled down (never stretched) to fit the 256 px box."""
-            box = self.preview.width()
+            """Shows an image 1:1, only scaled down (aspect ratio kept, never stretched) to THUMBNAIL_SIZE."""
+            box = THUMBNAIL_SIZE
             if pm.width() > box or pm.height() > box:
                 pm = pm.scaled(box, box, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
             self.preview.setPixmap(pm)
@@ -1778,7 +1778,7 @@ if QtWidgets is not None:
                 if not pm.isNull():
                     self._set_preview(pm)
                     return
-            self.preview.setText("MyLibrary\n\nNo thumbnail yet:\nclick Render Thumbnail")
+            self.preview.setText("No thumbnail\n\nRender\nThumbnail")
 
         def _render_thumbnail(self, entry=None):
             if entry is None:
@@ -1881,7 +1881,7 @@ if QtWidgets is not None:
             if not cur or cur.text() != name:
                 return
             if not data:
-                self.preview.setText("Preview unavailable")
+                self.preview.setText("No preview")
                 return
             self._img_cache[name] = data
             pm = QtGui.QPixmap()
