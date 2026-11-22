@@ -1099,6 +1099,9 @@ def delete_from_library(entry):
 
 
 THUMBNAIL_SIZE = 256              # rendered resolution (Preset Browser: 128 px), shown 1:1
+THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
+THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
+THUMBNAIL_PIXEL_VARIANCE = 0.05   # Preset Browser: 0.01
 THUMBNAIL_HDR = "Annecy"          # RenderMan factory environment map lighting the thumbnails
 THUMBNAIL_HDR_ROTATE_Y = 90.0     # degrees, around the world Y axis (as Maya's rotateY)
 
