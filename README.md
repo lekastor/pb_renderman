@@ -1,10 +1,10 @@
-# pb_renderman
+# Physically Based for RenderMan
 
-**Physically Based → PxrSurface** for Maya + RenderMan.
+**Real-world material values for PxrSurface in Maya.**
 
 Browse the [Physically Based](https://physicallybased.info) material database from inside Maya and set up a `PxrSurface` from measured values in one click: metals with real complex IOR, glass and liquids with Beer–Lambert interior absorption, scattering media, skin subsurface and thin-film iridescence. Everything is converted to your scene's rendering space (ACEScg or linear sRGB).
 
-Author: **Julien Duval** · Version **1.0.0** · License **MIT**
+Author: **Julien Duval** · Version **1.1.0** · License **MIT**
 
 ---
 
@@ -43,7 +43,7 @@ If an older single-file version (`scripts\pb_renderman.py`) was used in the curr
 
 ## Usage
 
-1. Pick a material in the list (search by name or tag, filter by category). The panel shows the database render, the values and exactly what will be set.
+1. Pick a material in the list (search by name or tag). Two menus filter the list: **Physically Based** (the database categories) and **MyLibrary** (your categories); the **Hide** checkbox next to each one hides its materials. The panel shows the database render, the values and exactly what will be set.
 2. Choose an action:
    - **Apply to Selected Materials**: updates the `PxrSurface` nodes that are selected, or assigned to the selected objects. Creates nothing.
    - **Create & Assign Material**: creates a new `PxrSurface` + shading group and assigns it to the selected objects or faces (or creates it unassigned).
@@ -57,8 +57,11 @@ The **MyLibrary** category lists your own PxrSurface presets, stored in their ow
 
 - They are applied exactly as saved, with the same two buttons. Only *Non-directional (faster SSS / Glass Single Scatter)* applies to them; the other options do not.
 - **Save Selected to MyLibrary…** saves the selected PxrSurface (or the one assigned to the selected object) as a new preset. The files use Maya's attribute-preset format (`.mel`), so you can also copy one into Maya's own preset folder if you want it in the Attribute Editor's *Presets* menu.
-- **Delete from MyLibrary…** moves the selected preset (and its preview image) to the `_trash` subfolder of the library, so it can be restored.
-- **Render Thumbnail** renders the selected preset in RenderMan's own Preset Browser preview scene (same scene and renderer, lit by RenderMan's factory Annecy HDRI), at 256 px (the browser renders 128 px) with up to 512 samples, converted to Maya's display/view transform, and saves it next to the `.mel` as a `.png`. You can also use your own `.png` or `.jpg` with the same name as the `.mel`.
+- **Update Selected to MyLibrary…** overwrites the preset picked in the list with the selected PxrSurface, keeping its name, category and thumbnail file (render the thumbnail again to refresh it).
+- **Categories**: the *New Category*, *Rename Category* and *Delete Category* buttons under the list manage them (Rename and Delete act on the category picked in the MyLibrary menu). A category is a subfolder of the library; deleting one moves it, with its presets, to `_trash`. New presets are saved in the category picked in the menu.
+- **Right-click a MyLibrary preset** in the list: Rename…, Render Thumbnail, Move to category or Delete…. Renaming and moving also take its preview image.
+- **Delete…** (right-click) moves the preset (and its preview image) to the `_trash` subfolder of the library, so it can be restored.
+- **Render Thumbnail** renders the selected preset in RenderMan's own Preset Browser preview scene (same scene and renderer, lit by RenderMan's factory Annecy HDRI, +0.5 stop), at 256 px (the browser renders 128 px) with up to 512 samples, converted to Maya's display/view transform, and saves it next to the `.mel` as a `.png`. Ctrl / Shift-click several presets to render their thumbnails one after the other (Esc cancels). Tick *Draft quality* for faster, noisier thumbnails (4–64 samples, pixel variance 0.1). You can also use your own `.png` or `.jpg` with the same name as the `.mel`.
 - MyLibrary is available even when the database cannot be downloaded.
 
 ### Options
@@ -70,10 +73,12 @@ The **MyLibrary** category lists your own PxrSurface presets, stored in their ow
 | Database value if meaningful | on | Uses the database roughness when it is not 0 or 0.5 (generic placeholders), e.g. brick 1.0, paper 0.8. |
 | SSS scale | 10 | Multiplier on the database subsurface radius (mm) → `subsurfaceDmfp`. |
 | Extinction scale | 1 | Multiplier on interior extinction. Coefficients are treated as per cm: 1 for a scene in cm, 100 in meters. |
-| Non-directional (faster SSS / Glass Single Scatter) | off | Replaces directional scattering by isotropic scattering: reduced scattering with `g` = 0 in the glass interior, Directionality 0 for subsurface and single scatter. Similar look, much faster, works in XPU. Also applies to MyLibrary presets (the files are not changed). |
+| Non-directional (faster SSS / Glass Single Scatter) | off | Replaces directional scattering by isotropic scattering: reduced scattering with `g` = 0 in the glass interior, Directionality 0 for subsurface and single scatter. Similar look, much faster. Also applies to MyLibrary presets (the files are not changed). |
 | Reset other attributes to defaults | on | *Apply* only: resets every unconnected attribute to its default before applying. |
 
-Click an option's name to reset it to its default value; right-click a checkbox for the same.
+Right-click an option (its name or its control) to reset it to its default value.
+
+**Help** menu: the *User Guide* (F1), links to MyLibrary, the Physically Based website and GitHub, and *About* (version, credits, license).
 
 ## How materials are mapped
 
@@ -106,7 +111,6 @@ Blood and coffee are always rendered non-directional: they are dense and strongl
 
 ## Known limitations
 
-- **Multiscattering is not supported in XPU.** Scattering media rendered in directional mode (juices, beer, wine) can render too dark in XPU; tick *Non-directional (faster SSS / Glass Single Scatter)*.
 - **Volume units are inferred.** The database does not state the unit of its volume coefficients. Per cm matches the measured absorption of water and the glass/water/ice depths, but some liquids look about ten times off. Use *Extinction scale* to adjust.
 - **RenderMan's built-in metal presets are defined in linear sRGB** and are not converted for ACEScg scenes, so they will differ slightly from this tool in an ACEScg scene. This tool's values are the color-managed ones.
 - Per-channel (RGB) n, k and volume coefficients are an approximation of spectral data.
@@ -117,11 +121,17 @@ The database is cached in `Documents\maya\physicallybased_cache\` (or `MAYA_APP_
 
 Your presets live in `Documents\maya\physicallybased_MyLibrary\`. Back this folder up: it is your own data.
 
+## Thanks
+
+A special thank you to **Anton Palmqvist** and all the **contributors** of [Physically Based](https://physicallybased.info). This tool exists because they measured, gathered and freely shared these values with the CG community. If you find a missing material or a wrong value, consider [contributing to the database](https://github.com/AntonPalmqvist/physically-based-api).
+
 ## Credits
 
 - Author: Julien Duval
 - Developed with the assistance of Claude (Anthropic)
 - Material data: [Physically Based API](https://api.physicallybased.info), CC0, by Anton Palmqvist and contributors
+
+Independent project, not affiliated with or endorsed by Pixar, Autodesk or physicallybased.info. RenderMan is a trademark of Pixar; Maya is a trademark of Autodesk.
 
 ## License
 

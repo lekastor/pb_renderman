@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
-pb_renderman.py
-================
+Physically Based for RenderMan  (pb_renderman.py)
+=================================================
+Real-world material values for PxrSurface in Maya.
 Browser for the https://physicallybased.info database in Maya + RenderMan.
 Creates or updates a PxrSurface from the database values.
 Specular: Primary Specular with physical Fresnel (IOR / n,k). Transmissive materials
@@ -33,10 +34,13 @@ Usage:
 Maya 2022+ (Python 3, PySide2 or PySide6) / RenderMan for Maya 24+.
 
 Author:   Julien Duval
-Version:  1.0.0 (2026-11-21)
+Version:  1.1.0 (2026-11-22)
 License:  MIT (see below)
 Credits:  Developed with the assistance of Claude (Anthropic).
           Material data: Physically Based API, CC0 (Anton Palmqvist and contributors).
+Thanks:   A special thank you to Anton Palmqvist and all the contributors of
+          Physically Based (https://physicallybased.info). This tool exists because
+          they measured, gathered and freely shared these values with the CG community.
 
 Copyright (c) 2026 Julien Duval
 
@@ -60,7 +64,12 @@ SOFTWARE.
 """
 
 __author__ = "Julien Duval"
-__version__ = "1.0.0"
+__version__ = "1.1.0"
+TOOL_NAME = "Physically Based for RenderMan"
+TOOL_TAGLINE = "Real-world material values for PxrSurface in Maya"
+HOMEPAGE = "https://github.com/lekastor/pb_renderman"
+DATABASE_URL = "https://physicallybased.info"
+DATABASE_REPO = "https://github.com/AntonPalmqvist/physically-based-api"
 __license__ = "MIT"
 
 
@@ -620,7 +629,7 @@ def build_pxr_values(mat, colorspace="acescg", sss_scale=DEFAULT_SSS_SCALE, roug
             if max(alb) > 0.0:
                 # without it the interior is single-scatter only: dense media (blood) go black
                 v["multiScatter"] = 1
-                notes.append("Interior: single scatter albedo %s, g0 %.3g, Multiscattering ON (not supported in XPU)"
+                notes.append("Interior: single scatter albedo %s, g0 %.3g, Multiscattering ON"
                              % (", ".join("%.3g" % x for x in alb), g0))
 
         radius = mat.get("subsurfaceRadius")
@@ -775,26 +784,34 @@ def reset_to_defaults(node, log):
     """
     Resets every numeric, unlocked, unconnected attribute of the node to its
     default value. Connected attributes (textures, patterns) are left untouched.
+    The defaults are read from a fresh node of the same type, created then deleted:
+    attributeQuery(listDefault=True) returns 0 for some RenderMan attributes,
+    which would zero them.
     """
     from maya import cmds
     kept = []
-    for attr in cmds.listAttr(node, settable=True, scalar=True) or []:
-        if attr in _DG_ATTRS or "." in attr:
-            continue
-        plug = "%s.%s" % (node, attr)
-        try:
-            if cmds.getAttr(plug, type=True) not in _NUMERIC_TYPES:
+    ref = cmds.createNode(cmds.nodeType(node), name="pb_defaults_tmp#", skipSelect=True)
+    try:
+        for attr in cmds.listAttr(node, settable=True, scalar=True) or []:
+            if attr in _DG_ATTRS or "." in attr:
                 continue
-            if cmds.getAttr(plug, lock=True):
+            plug = "%s.%s" % (node, attr)
+            try:
+                if cmds.getAttr(plug, type=True) not in _NUMERIC_TYPES:
+                    continue
+                if cmds.getAttr(plug, lock=True):
+                    continue
+                if cmds.listConnections(plug, s=True, d=False):
+                    kept.append(attr)
+                    continue
+                default = cmds.getAttr("%s.%s" % (ref, attr))
+                if cmds.getAttr(plug) != default:
+                    cmds.setAttr(plug, default)
+            except Exception:
                 continue
-            if cmds.listConnections(plug, s=True, d=False):
-                kept.append(attr)
-                continue
-            default = cmds.attributeQuery(attr, node=node, listDefault=True)
-            if default:
-                cmds.setAttr(plug, default[0])
-        except Exception:
-            continue
+    finally:
+        if cmds.objExists(ref):
+            cmds.delete(ref)
     # a connected color also has connected children: report the parent only once
     if kept:
         log.append("  (kept, connected) " + ", ".join(sorted(set(kept))))
@@ -883,6 +900,8 @@ def create_on_selection(mat, colorspace="acescg", sss_scale=DEFAULT_SSS_SCALE, r
 # --------------------------------------------------------------------------- #
 
 LIBRARY_CATEGORY = "MyLibrary"
+# "All categories" entry of the category menus (item data), category button actions
+_ALL, _NEW_CAT, _RENAME_CAT, _DELETE_CAT = "<all>", "<new>", "<rename>", "<delete>"
 LIBRARY_FOLDER = "physicallybased_MyLibrary"
 PRESET_PREFIX = "PxrSurface_"
 _RE_NUM = re.compile(r'blendAttr\s+"(\w+)"\s+([-+0-9.eE]+)\s*;')
@@ -917,28 +936,112 @@ def parse_preset(path):
     return attrs
 
 
+_PRESET_IMAGE_EXTS = (".png", ".jpg", ".jpeg")
+
+
+def library_categories(root=None):
+    """MyLibrary categories: the subfolders of the library (not _trash or hidden ones)."""
+    root = root or library_dir()
+    if not os.path.isdir(root):
+        return []
+    return sorted((d for d in os.listdir(root)
+                   if os.path.isdir(os.path.join(root, d)) and not d.startswith(("_", "."))), key=str.lower)
+
+
 def load_library(folder=None):
-    """Lists the presets of the library folder as entries of the MyLibrary category."""
-    folder = folder or library_dir()
+    """
+    Lists the presets of the library as entries of the MyLibrary category:
+    the .mel files of the library folder (no category) and of its subfolders
+    (one level, the subfolder name being the category).
+    """
+    root = folder or library_dir()
     out = []
-    if not os.path.isdir(folder):
+    if not os.path.isdir(root):
         return out
-    for fn in sorted(os.listdir(folder), key=str.lower):
-        if not fn.lower().endswith(".mel"):
-            continue
-        stem = fn[:-4]
-        display = stem[len(PRESET_PREFIX):] if stem.startswith(PRESET_PREFIX) else stem
-        path = os.path.join(folder, fn)
-        try:
-            attrs = parse_preset(path)
-        except Exception as exc:
-            print("[PB] Could not read preset %s: %s" % (fn, exc))
-            continue
-        image = next((os.path.join(folder, stem + ext) for ext in (".png", ".jpg", ".jpeg")
-                      if os.path.isfile(os.path.join(folder, stem + ext))), None)
-        out.append({"name": display, "category": [LIBRARY_CATEGORY], "_library": True,
-                    "_preset": stem, "_path": path, "_attrs": attrs, "_image": image})
+    for libcat in [""] + library_categories(root):
+        sub = os.path.join(root, libcat) if libcat else root
+        for fn in sorted(os.listdir(sub), key=str.lower):
+            if not fn.lower().endswith(".mel"):
+                continue
+            stem = fn[:-4]
+            display = stem[len(PRESET_PREFIX):] if stem.startswith(PRESET_PREFIX) else stem
+            path = os.path.join(sub, fn)
+            try:
+                attrs = parse_preset(path)
+            except Exception as exc:
+                print("[PB] Could not read preset %s: %s" % (path, exc))
+                continue
+            image = next((os.path.join(sub, stem + ext) for ext in _PRESET_IMAGE_EXTS
+                          if os.path.isfile(os.path.join(sub, stem + ext))), None)
+            out.append({"name": display, "category": [LIBRARY_CATEGORY], "_library": True, "_libcat": libcat,
+                        "_preset": stem, "_path": path, "_attrs": attrs, "_image": image})
     return out
+
+
+def category_folder_name(name):
+    """Folder name for a MyLibrary category (letters, digits, _ and -; no leading _)."""
+    clean = "".join(c if (c.isalnum() or c in "_-") else "_" for c in name.strip())
+    return clean.strip("_-")
+
+
+def _check_category_name(name, exclude=None):
+    folder = category_folder_name(name)
+    if not folder:
+        raise ValueError("Invalid category name.")
+    target = os.path.join(library_dir(), folder)
+    taken = {c.lower() for c in library_categories()} - {(exclude or "").lower()}
+    if folder.lower() in taken or (os.path.exists(target) and (exclude or "").lower() != folder.lower()):
+        raise ValueError("A category named '%s' already exists." % folder)
+    return folder, target
+
+
+def create_library_category(name):
+    """Creates a MyLibrary category (a subfolder of the library). Returns its name."""
+    folder, target = _check_category_name(name)
+    os.makedirs(target)
+    return folder
+
+
+def rename_library_category(old, new):
+    """Renames a MyLibrary category folder. Returns the new name."""
+    folder, target = _check_category_name(new, exclude=old)
+    if folder != old:
+        os.rename(os.path.join(library_dir(), old), target)
+    return folder
+
+
+def delete_library_category(name):
+    """
+    Moves a MyLibrary category folder, with its presets, to the library's
+    _trash subfolder (recoverable). Returns the trash folder.
+    """
+    import shutil
+    src = os.path.join(library_dir(), name)
+    if not name or not os.path.isdir(src):
+        raise ValueError("Unknown category: %s" % name)
+    trash = os.path.join(library_dir(), "_trash")
+    if not os.path.isdir(trash):
+        os.makedirs(trash)
+    shutil.move(src, os.path.join(trash, "%s_%s" % (name, time.strftime("%Y%m%d_%H%M%S"))))
+    return trash
+
+
+def move_to_category(entry, libcat):
+    """Moves a preset (and its preview images) to another category ("" = none). Returns the new path."""
+    dest = os.path.join(library_dir(), libcat) if libcat else library_dir()
+    if not os.path.isdir(dest):
+        raise ValueError("Unknown category: %s" % libcat)
+    src_dir, stem = os.path.dirname(entry["_path"]), entry["_preset"]
+    if os.path.normcase(os.path.abspath(src_dir)) == os.path.normcase(os.path.abspath(dest)):
+        return entry["_path"]
+    if os.path.exists(os.path.join(dest, stem + ".mel")):
+        raise ValueError("'%s' already exists in %s." % (entry["name"], libcat or "MyLibrary (no category)"))
+    import shutil
+    for ext in (".mel",) + _PRESET_IMAGE_EXTS:
+        src = os.path.join(src_dir, stem + ext)
+        if os.path.isfile(src):
+            shutil.move(src, os.path.join(dest, stem + ext))
+    return os.path.join(dest, stem + ".mel")
 
 
 def _preset_color(a, name):
@@ -1098,13 +1201,41 @@ def delete_from_library(entry):
     return trash
 
 
+def rename_in_library(entry, new_name):
+    """
+    Renames a preset: its .mel and its preview images (.png/.jpg/.jpeg with the
+    same name). Returns the new file stem. Refuses to overwrite another preset.
+    """
+    stem = preset_file_name(new_name)
+    if not stem:
+        raise ValueError("Invalid preset name.")
+    folder = os.path.dirname(entry["_path"])
+    old = entry["_preset"]
+    if stem == old:
+        return stem
+    target = os.path.join(folder, stem + ".mel")
+    # Windows is case-insensitive: a case-only rename finds the preset itself
+    if os.path.exists(target) and stem.lower() != old.lower():
+        raise ValueError("A preset named '%s' already exists." % stem[len(PRESET_PREFIX):])
+    for ext in (".mel",) + _PRESET_IMAGE_EXTS:
+        src = os.path.join(folder, old + ext)
+        if os.path.isfile(src):
+            os.rename(src, os.path.join(folder, stem + ext))
+    return stem
+
+
 THUMBNAIL_SIZE = 256              # rendered resolution (Preset Browser: 128 px), shown 1:1
 PREVIEW_BOX = 256                 # UI preview area: images shown 1:1, larger ones scaled down, never up
 THUMBNAIL_MIN_SAMPLES = 16        # Preset Browser: 32
 THUMBNAIL_MAX_SAMPLES = 512       # Preset Browser: 64
 THUMBNAIL_PIXEL_VARIANCE = 0.02   # Preset Browser: 0.01
+# Draft quality (checkbox next to Render Thumbnail): same size and lighting, far fewer samples
+THUMBNAIL_DRAFT_MIN_SAMPLES = 4
+THUMBNAIL_DRAFT_MAX_SAMPLES = 64
+THUMBNAIL_DRAFT_PIXEL_VARIANCE = 0.1
 THUMBNAIL_HDR = "Annecy"          # RenderMan factory environment map lighting the thumbnails
 THUMBNAIL_HDR_ROTATE_Y = 90.0     # degrees, around the world Y axis (as Maya's rotateY)
+THUMBNAIL_DOME_EXPOSURE = 0.5     # stops added to the dome light's exposure
 
 
 def thumbnail_hdris():
@@ -1159,6 +1290,17 @@ def _ocio_display_args(asset):
     return sets
 
 
+def _expose_light_rib(rib, stops):
+    """Adds stops to the dome light's exposure (inserts the parameter if absent)."""
+    if not stops:
+        return rib
+    new, n = re.subn(r'("float exposure"\s*)\[\s*([-+0-9.eE]+)\s*\]',
+                     lambda m: "%s[%g]" % (m.group(1), float(m.group(2)) + stops), rib, count=1)
+    if n:
+        return new
+    return re.sub(r'(Light\s+"PxrDomeLight"\s+"[^"]*")', r'\g<1> "float exposure" [%g]' % stops, rib, count=1)
+
+
 def _rotate_light_rib(rib, degrees):
     """Rotates the dome light around the world Y axis (Maya rotateY convention)."""
     if not degrees:
@@ -1177,7 +1319,65 @@ def _rotate_light_rib(rib, degrees):
     return re.sub(r'(\n\s*)(Light\s+"PxrDomeLight")', r'\1Rotate %g 0 1 0\1\2' % degrees, rib, count=1)
 
 
-def render_library_thumbnail(entry):
+class RenderCancelled(Exception):
+    pass
+
+
+def _run_with_progress(cmd, title, startupinfo=None):
+    """
+    Runs prman with -Progress and shows its percentage in a Maya progress window
+    (Esc or Cancel stops the render). Returns the process output (text).
+    """
+    import subprocess
+    import queue
+    from maya import cmds
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, startupinfo=startupinfo)
+    lines = queue.Queue()
+
+    def reader():
+        buf = b""
+        while True:
+            chunk = proc.stdout.read1(256) if hasattr(proc.stdout, "read1") else proc.stdout.read(64)
+            if not chunk:
+                break
+            buf += chunk
+            parts = re.split(rb"[\r\n]", buf)
+            buf = parts.pop()
+            for part in parts:
+                lines.put(part.decode(errors="replace"))
+        if buf:
+            lines.put(buf.decode(errors="replace"))
+
+    t = threading.Thread(target=reader)
+    t.daemon = True
+    t.start()
+    log, percent = [], 0
+    cmds.progressWindow(title="Physically Based for RenderMan", status=title + "  0%",
+                        progress=0, maxValue=100, isInterruptable=True)
+    try:
+        while proc.poll() is None or not lines.empty() or t.is_alive():
+            while not lines.empty():
+                line = lines.get()
+                m = re.search(r"R90000\s+(\d+)%", line)
+                if m:
+                    percent = int(m.group(1))
+                    cmds.progressWindow(edit=True, progress=percent, status="%s  %d%%" % (title, percent))
+                elif line.strip():
+                    log.append(line)
+            if cmds.progressWindow(query=True, isCancelled=True):
+                proc.kill()
+                raise RenderCancelled("Thumbnail render cancelled.")
+            time.sleep(0.05)
+            if proc.poll() is not None and lines.empty():
+                t.join(0.5)
+                if lines.empty():
+                    break
+    finally:
+        cmds.progressWindow(endProgress=True)
+    return "\n".join(log)
+
+
+def render_library_thumbnail(entry, label="", draft=False):
     """
     Renders a MyLibrary preset in the RenderMan Preset Browser preview scene
     (same scene, lighting and renderer), at THUMBNAIL_SIZE px with more samples,
@@ -1235,7 +1435,6 @@ def render_library_thumbnail(entry):
                 cmds.delete(node)
         cmds.undoInfo(stateWithoutFlush=undo_state)
 
-    progress = rab.MayaProgress()
     try:
         # 2. the Preset Browser preview scene, in its own folder
         scene = FilePath(os.path.join(tmpdir, "scene"))
@@ -1263,29 +1462,32 @@ def render_library_thumbnail(entry):
             with open(scene.join("m_lightrig_envMap.rib").os_path(), "r") as f:
                 light_rib = f.read()
         with open(scene.join("m_lightrig_envMap.rib").os_path(), "w") as f:
-            f.write(_rotate_light_rib(light_rib, THUMBNAIL_HDR_ROTATE_Y))
+            f.write(_expose_light_rib(_rotate_light_rib(light_rib, THUMBNAIL_HDR_ROTATE_Y), THUMBNAIL_DOME_EXPOSURE))
 
         # 3. higher resolution and more samples than the Preset Browser
         with open(ribfile.os_path(), "r") as f:
             rib = f.read()
         rib = re.sub(r'("int\[2\] FormatResolution"\s*)\[\s*\d+\s+\d+\s*\]',
                      r'\g<1>[%d %d]' % (THUMBNAIL_SIZE, THUMBNAIL_SIZE), rib)
-        rib = re.sub(r'("int maxsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % THUMBNAIL_MAX_SAMPLES, rib)
-        rib = re.sub(r'("int minsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % THUMBNAIL_MIN_SAMPLES, rib)
-        rib = re.sub(r'("float PixelVariance"\s*)\[[^\]]*\]', r'\g<1>[%g]' % THUMBNAIL_PIXEL_VARIANCE, rib)
+        if draft:
+            smin, smax, pv = THUMBNAIL_DRAFT_MIN_SAMPLES, THUMBNAIL_DRAFT_MAX_SAMPLES, THUMBNAIL_DRAFT_PIXEL_VARIANCE
+        else:
+            smin, smax, pv = THUMBNAIL_MIN_SAMPLES, THUMBNAIL_MAX_SAMPLES, THUMBNAIL_PIXEL_VARIANCE
+        rib = re.sub(r'("int maxsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % smax, rib)
+        rib = re.sub(r'("int minsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % smin, rib)
+        rib = re.sub(r'("float PixelVariance"\s*)\[[^\]]*\]', r'\g<1>[%g]' % pv, rib)
         with open(ribfile.os_path(), "w") as f:
             f.write(rib)
 
         # 4. render
-        progress.Start()
-        progress.Update(0, "Rendering thumbnail: %s" % entry["name"])
         ncpu = max(1, multiprocessing.cpu_count() - 1)
-        cmd = [os.path.join(rmanbin, app("prman")), "-t:%d" % ncpu, "-cwd", scene.os_path(), ribfile.os_path()]
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startup_info())
+        cmd = [os.path.join(rmanbin, app("prman")), "-Progress", "-t:%d" % ncpu,
+               "-cwd", scene.os_path(), ribfile.os_path()]
+        output = _run_with_progress(cmd, "Rendering thumbnail%s: %s" % (label and " " + label, entry["name"]),
+                                    startup_info())
         tif = os.path.join(tmpdir, "asset_100.tif")
         if not os.path.isfile(tif):
-            raise RuntimeError("prman did not produce an image:\n%s"
-                               % proc.stderr.decode(errors="replace")[-1500:])
+            raise RuntimeError("prman did not produce an image:\n%s" % output[-1500:])
 
         # 5. tif (rendering space) -> png (Maya's display/view transform)
         target = os.path.join(os.path.dirname(entry["_path"]), entry["_preset"] + ".png")
@@ -1304,7 +1506,6 @@ def render_library_thumbnail(entry):
             errors.append(res.stderr.decode(errors="replace").strip())
         raise RuntimeError("Could not convert the render to PNG:\n" + "\n".join(errors))
     finally:
-        progress.End()
         # keep the last render's working files (RIBs, asset, raw tif) for diagnosis
         try:
             last = os.path.join(_cache_path(), "thumbnail_last_render")
@@ -1315,10 +1516,11 @@ def render_library_thumbnail(entry):
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def save_to_library(shader, name):
+def save_to_library(shader, name, libcat="", path=None):
     """
     Saves every numeric and string attribute of the shader as a preset file
-    (Maya attribute-preset format) in the library folder. Returns the path.
+    (Maya attribute-preset format) in the library folder, or in its libcat
+    category subfolder, or at path (update of an existing preset). Returns the path.
     """
     from maya import cmds
     stem = preset_file_name(name)
@@ -1340,7 +1542,9 @@ def save_to_library(shader, name):
         except Exception:
             continue
     lines.append("endAttrPreset();")
-    path = os.path.join(library_dir(), stem + ".mel")
+    if not path:
+        path = os.path.join(library_dir(), libcat, stem + ".mel") if libcat else \
+            os.path.join(library_dir(), stem + ".mel")
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines) + "\n")
     return path
@@ -1371,11 +1575,127 @@ def install_shelf_button(shelf=None):
                 cmds.shelfButton(child, query=True, label=True) == "pb_renderman":
             cmds.deleteUI(child)
     cmds.shelfButton(parent=shelf, label="pb_renderman", imageOverlayLabel="",
-                     annotation="Physically Based -> PxrSurface",
+                     annotation="Physically Based for RenderMan: real-world material values for PxrSurface",
                      image=icon_path() or "commandButton.png",
                      command="import pb_renderman\npb_renderman.show()", sourceType="python")
     print("[PB] Shelf button added to '%s'." % shelf)
     return shelf
+
+
+# --------------------------------------------------------------------------- #
+#  Help: user guide and About (same wording as the tooltips)
+# --------------------------------------------------------------------------- #
+
+def user_guide_html():
+    return """
+<h2>%(name)s — User Guide</h2>
+<p>%(tagline)s. Browse the <a href="%(db)s">Physically Based</a> database and set up a
+PxrSurface from measured values: metals with complex IOR, glass and liquids with interior
+absorption, scattering media, skin subsurface and thin-film iridescence, converted to the
+scene's rendering space. Hover any control for its tooltip.</p>
+
+<h3>1. Pick a material</h3>
+<ul>
+<li><b>Search</b>: by name or tag.</li>
+<li><b>Physically Based</b> menu: the database categories. <b>MyLibrary</b> menu: your own
+categories. The <b>Hide</b> checkbox next to each menu hides its materials.</li>
+<li>The panel shows the database render (or your thumbnail), the values and exactly what will be set.</li>
+</ul>
+
+<h3>2. Apply it</h3>
+<ul>
+<li><b>Apply to Selected Materials</b>: update the PxrSurface nodes that are selected,
+or assigned to the selected objects. Creates nothing.</li>
+<li><b>Create &amp; Assign Material</b>: create a new PxrSurface + shading group
+and assign it to the selected objects / faces.</li>
+</ul>
+<p>Each action is one undo step. Attributes connected to textures are never overwritten.</p>
+
+<h3>Options</h3>
+<p>Right-click an option (its name or its control) to reset it to its default value.</p>
+<table border="0" cellspacing="0" cellpadding="3">
+<tr><td><b>Color space</b></td><td>Detected from Maya's rendering space (ACEScg or linear sRGB).</td></tr>
+<tr><td><b>Specular roughness</b></td><td>Primary Specular roughness (default %(rough)g, glass 0.001).</td></tr>
+<tr><td><b>Database value if meaningful</b></td><td>Use the physicallybased.info roughness when it is
+not 0 or 0.5 (generic placeholders), e.g. brick 1.0, paper 0.8, pearl 0.35.
+Otherwise the value on the left is used (glass: 0.001).</td></tr>
+<tr><td><b>SSS scale</b></td><td>Multiplier on the database subsurface radius (mm) -&gt; subsurfaceDmfp
+(default %(sss)g).</td></tr>
+<tr><td><b>Extinction scale</b></td><td>Multiplier on the interior extinction of transmissive materials.
+Database coefficients are per cm: 1 for a scene in cm, 100 in meters.
+Raise it to exaggerate the tint on small objects.</td></tr>
+<tr><td><b>Non-directional (faster SSS / Glass Single Scatter)</b></td><td>Replace directional (forward)
+scattering by isotropic scattering. Similar look, much faster. Applies to the database
+and to MyLibrary presets. Blood and coffee are always non-directional.</td></tr>
+<tr><td><b>Reset other attributes to defaults</b></td><td>Apply to Selected Materials: reset every attribute
+not driven by the database to its default first. Connected attributes (textures) are kept.</td></tr>
+</table>
+
+<h3>MyLibrary: your own presets</h3>
+<p>Stored in the <code>%(lib)s</code> folder of Maya's user folder (Documents/maya on Windows),
+shared by all Maya versions. Presets are applied exactly as
+saved; only <i>Non-directional</i> applies to them.</p>
+<ul>
+<li><b>Save Selected to MyLibrary…</b>: save the selected PxrSurface (or the one assigned to the
+selected object) as a preset, in the category picked in the MyLibrary menu.</li>
+<li><b>Update Selected to MyLibrary…</b>: overwrite the preset picked in the list with the selected
+PxrSurface. Name, category and thumbnail files are kept.</li>
+<li><b>New / Rename / Delete Category</b>: a category is a subfolder of the library. Rename and
+Delete act on the category picked in the MyLibrary menu.</li>
+<li><b>Right-click a preset</b>: Rename…, Render Thumbnail, Move to category, Delete….</li>
+<li><b>Render Thumbnail</b>: render the selected presets with the RenderMan Preset Browser
+preview scene (%(thumb)d px), saved next to the .mel. Ctrl / Shift-click in the list to render
+several in a row; Esc cancels. <b>Draft quality</b>: faster, noisier thumbnails. Your own .png or .jpg with the preset's name also works.</li>
+<li>Deleted presets and categories go to the <code>_trash</code> subfolder and can be restored.</li>
+</ul>
+
+<h3>Tips and limitations</h3>
+<ul>
+<li>The database does not state the unit of its volume coefficients (per cm assumed):
+use <i>Extinction scale</i> if a liquid looks off.</li>
+<li>The database is cached for a week in the <code>physicallybased_cache</code> folder, next to MyLibrary.</li>
+<li>Full documentation: README.txt next to the script, or <a href="%(home)s">%(home)s</a>.</li>
+</ul>
+""" % {"name": TOOL_NAME, "tagline": TOOL_TAGLINE, "db": DATABASE_URL, "rough": DEFAULT_SPEC_ROUGHNESS,
+       "sss": DEFAULT_SSS_SCALE, "lib": LIBRARY_FOLDER, "thumb": THUMBNAIL_SIZE,
+       "home": HOMEPAGE}
+
+
+def about_html():
+    from maya import cmds
+    rmantree = os.environ.get("RMANTREE", "")
+    rman = os.path.basename(rmantree.rstrip("/\\\\")) if rmantree else "not loaded"
+    qt = "PySide6" if QtCore and QtCore.__name__.startswith("PySide6") else "PySide2"
+    return """
+<h2>%(name)s</h2>
+<p><i>%(tagline)s</i></p>
+<p>Version %(version)s<br>
+by <b>%(author)s</b><br>
+<a href="%(home)s">%(home)s</a></p>
+
+<p><b>Thanks</b><br>
+A special thank you to <b>Anton Palmqvist</b> and all the contributors of
+<a href="%(db)s">Physically Based</a>. This tool exists because they measured, gathered and freely
+shared these values with the CG community. Missing material or wrong value?
+<a href="%(dbrepo)s">Contribute to the database</a>.</p>
+
+<p><b>Credits</b><br>
+Material data: Physically Based API, CC0, by Anton Palmqvist and contributors.<br>
+Developed with the assistance of Claude (Anthropic).</p>
+
+<p><b>License</b><br>
+MIT License. Copyright (c) 2026 %(author)s.<br>
+Free to use, modify and share, including commercially, provided the copyright and license
+notice are kept. Provided "as is", without warranty of any kind. Full text in the header of
+pb_renderman.py.</p>
+
+<p style="color:#888">Independent project, not affiliated with or endorsed by Pixar, Autodesk or
+physicallybased.info. RenderMan is a trademark of Pixar; Maya is a trademark of Autodesk.</p>
+
+<p style="color:#888">Maya %(maya)s · %(rman)s · %(qt)s · Python %(py)s</p>
+""" % {"name": TOOL_NAME, "tagline": TOOL_TAGLINE, "version": __version__, "author": __author__,
+       "home": HOMEPAGE, "db": DATABASE_URL, "dbrepo": DATABASE_REPO, "maya": cmds.about(version=True),
+       "rman": rman, "qt": qt, "py": sys.version.split()[0]}
 
 
 # --------------------------------------------------------------------------- #
@@ -1420,44 +1740,46 @@ if QtWidgets is not None:
         loaded = QtCore.Signal(object, object)       # (materials, error)
         image = QtCore.Signal(str, bytes)            # (name, data)
 
-    class _ResetLabel(QtWidgets.QLabel):
-        """Form label: clicking it resets its control to the default value."""
-        def __init__(self, text, reset_fn, parent=None):
-            super(_ResetLabel, self).__init__(text, parent)
-            self._reset_fn = reset_fn
-            self.setCursor(QtCore.Qt.PointingHandCursor)
-            self.setToolTip("Click to reset to default value")
+    def _reset_menu(widgets, reset_fn, default_text=""):
+        """
+        Right-click on any of widgets -> 'Reset to default value'. Text fields keep their
+        usual Cut / Copy / Paste menu, with the reset entry added at the bottom.
+        """
+        label = "Reset to default value" + (" (%s)" % default_text if default_text else "")
 
-        def mousePressEvent(self, event):
-            if event.button() == QtCore.Qt.LeftButton:
-                self._reset_fn()
-            super(_ResetLabel, self).mousePressEvent(event)
+        def show(w, pos):
+            # line edits (incl. the one inside a spin box) keep Cut / Copy / Paste
+            m = w.createStandardContextMenu() if isinstance(w, QtWidgets.QLineEdit) else QtWidgets.QMenu(w)
+            if m.actions():
+                m.addSeparator()
+            m.addAction(label).triggered.connect(lambda *_: reset_fn())
+            pt = w.mapToGlobal(pos)
+            m.exec_(pt) if hasattr(m, "exec_") else m.exec(pt)
 
-        def enterEvent(self, event):
-            f = self.font(); f.setUnderline(True); self.setFont(f)
-            super(_ResetLabel, self).enterEvent(event)
-
-        def leaveEvent(self, event):
-            f = self.font(); f.setUnderline(False); self.setFont(f)
-            super(_ResetLabel, self).leaveEvent(event)
+        for w in widgets:
+            targets = [w]
+            if isinstance(w, QtWidgets.QAbstractSpinBox) and w.findChild(QtWidgets.QLineEdit):
+                targets.append(w.findChild(QtWidgets.QLineEdit))
+            for t in targets:
+                t.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+                t.customContextMenuRequested.connect(lambda pos, t=t: show(t, pos))
+            tip = w.toolTip()
+            w.setToolTip((tip + "\n" if tip else "") + "Right-click: reset to default value")
 
     def _checkbox_reset_menu(cb, default):
-        """Right-click on a checkbox -> 'Reset to default value'."""
-        cb.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        _reset_menu([cb], lambda: cb.setChecked(default), "on" if default else "off")
 
-        def menu(pos):
-            m = QtWidgets.QMenu(cb)
-            act = m.addAction("Reset to default value (%s)" % ("on" if default else "off"))
-            act.triggered.connect(lambda: cb.setChecked(default))
-            m.exec_(cb.mapToGlobal(pos)) if hasattr(m, "exec_") else m.exec(cb.mapToGlobal(pos))
-        cb.customContextMenuRequested.connect(menu)
-        cb.setToolTip((cb.toolTip() + "\n" if cb.toolTip() else "") + "Right-click: reset to default value")
+    class _ResetLabel(QtWidgets.QLabel):
+        """Form label: right-click it (or its control) to reset the control to its default value."""
+        def __init__(self, text, reset_fn, controls=(), default_text="", parent=None):
+            super(_ResetLabel, self).__init__(text, parent)
+            _reset_menu([self] + list(controls), reset_fn, default_text)
 
     class PBWindow(QtWidgets.QDialog):
         def __init__(self, parent=None):
             super(PBWindow, self).__init__(parent)
             self.setObjectName(WINDOW_OBJECT)
-            self.setWindowTitle("Physically Based → PxrSurface  v%s — %s" % (__version__, __author__))
+            self.setWindowTitle("%s  v%s — %s" % (TOOL_NAME, __version__, __author__))
             self.setWindowFlags(self.windowFlags() | QtCore.Qt.Window)
             self.resize(720, 520)
             icon = QtGui.QIcon()
@@ -1480,25 +1802,54 @@ if QtWidgets is not None:
         # -- UI --
         def _build(self):
             lay = QtWidgets.QHBoxLayout(self)
+            lay.setMenuBar(self._build_menu())
 
             left = QtWidgets.QVBoxLayout()
-            row = QtWidgets.QHBoxLayout()
             self.search = QtWidgets.QLineEdit()
             self.search.setPlaceholderText("Search (name, tag)…")
             self.search.textChanged.connect(self._filter)
+            left.addWidget(self.search)
+            grid = QtWidgets.QGridLayout()
             self.cat = QtWidgets.QComboBox()
+            self.cat.setToolTip("Physically Based database categories")
             self.cat.currentIndexChanged.connect(self._filter)
-            row.addWidget(self.search, 2)
-            row.addWidget(self.cat, 1)
-            left.addLayout(row)
+            self.libcat = QtWidgets.QComboBox()
+            self.libcat.setToolTip("MyLibrary categories (subfolders of the MyLibrary folder)")
+            self.libcat.currentIndexChanged.connect(self._filter)
+            self.hide_pb = QtWidgets.QCheckBox("Hide")
+            self.hide_pb.setToolTip("Hide the Physically Based materials")
+            self.hide_pb.toggled.connect(self._filter)
+            _checkbox_reset_menu(self.hide_pb, False)
+            self.hide_lib = QtWidgets.QCheckBox("Hide")
+            self.hide_lib.setToolTip("Hide the MyLibrary presets")
+            self.hide_lib.toggled.connect(self._filter)
+            _checkbox_reset_menu(self.hide_lib, False)
+            grid.addWidget(QtWidgets.QLabel("Physically Based:"), 0, 0)
+            grid.addWidget(self.cat, 0, 1)
+            grid.addWidget(self.hide_pb, 0, 2)
+            grid.addWidget(QtWidgets.QLabel("MyLibrary:"), 1, 0)
+            grid.addWidget(self.libcat, 1, 1)
+            grid.addWidget(self.hide_lib, 1, 2)
+            grid.setColumnStretch(1, 1)
+            left.addLayout(grid)
             self.list = QtWidgets.QListWidget()
             self.list.currentItemChanged.connect(self._on_select)
+            # Ctrl / Shift-click: several presets, e.g. to render their thumbnails in a row
+            self.list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+            self.list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)  # MyLibrary: Rename / Thumbnail / Delete
+            self.list.customContextMenuRequested.connect(self._list_menu)
             left.addWidget(self.list)
             row2 = QtWidgets.QHBoxLayout()
-            b_ref = QtWidgets.QPushButton("Refresh")
-            b_ref.clicked.connect(lambda: self.reload(True))
-            b_ref.setToolTip("Download the database again and rescan MyLibrary")
-            row2.addWidget(b_ref)
+            for label, action, tip in (("New Category", _NEW_CAT, "Create a MyLibrary category"),
+                                       ("Rename Category", _RENAME_CAT,
+                                        "Rename the category picked in the MyLibrary menu"),
+                                       ("Delete Category", _DELETE_CAT,
+                                        "Move the category picked in the MyLibrary menu, with its presets,\n"
+                                        "to the _trash subfolder of the library (recoverable)")):
+                b = QtWidgets.QPushButton(label)
+                b.setToolTip(tip)
+                b.clicked.connect(lambda *_, a=action: self._category_action(a))  # *_: Qt's checked flag
+                row2.addWidget(b)
             left.addLayout(row2)
             lay.addLayout(left, 1)
 
@@ -1521,7 +1872,8 @@ if QtWidgets is not None:
             detected = detect_colorspace()
             self.cs.setCurrentText(detected or "acescg")
             self.cs.currentIndexChanged.connect(lambda *_: self._on_select(self.list.currentItem()))
-            form.addRow(_ResetLabel("Color space:", lambda: self.cs.setCurrentText(detect_colorspace() or "acescg")),
+            form.addRow(_ResetLabel("Color space:", lambda: self.cs.setCurrentText(detect_colorspace() or "acescg"),
+                                    [self.cs], "detected"),
                         self.cs)
             rs = maya_rendering_space() or "color management off"
             self.rs_label = QtWidgets.QLabel("Maya rendering space: <b>%s</b>%s" % (
@@ -1547,16 +1899,19 @@ if QtWidgets is not None:
             rrow.addWidget(self.rough)
             rrow.addWidget(self.rough_db)
             _checkbox_reset_menu(self.rough_db, True)
+            _reset_menu([self.rough], lambda: self.rough.setValue(DEFAULT_SPEC_ROUGHNESS), "%g" % DEFAULT_SPEC_ROUGHNESS)
             form.addRow(_ResetLabel("Specular roughness:",
                                     lambda: (self.rough_db.setChecked(True),
-                                             self.rough.setValue(DEFAULT_SPEC_ROUGHNESS))), rrow)
+                                             self.rough.setValue(DEFAULT_SPEC_ROUGHNESS)),
+                                    default_text="%g, database value on" % DEFAULT_SPEC_ROUGHNESS), rrow)
             self.sss = QtWidgets.QDoubleSpinBox()
             self.sss.setDecimals(4)
             self.sss.setRange(0.0001, 1000)
             self.sss.setValue(DEFAULT_SSS_SCALE)
             self.sss.setToolTip("Multiplier on the database subsurface radius (mm) -> subsurfaceDmfp (default 10)")
             self.sss.valueChanged.connect(lambda *_: self._on_select(self.list.currentItem()))
-            form.addRow(_ResetLabel("SSS scale:", lambda: self.sss.setValue(DEFAULT_SSS_SCALE)), self.sss)
+            form.addRow(_ResetLabel("SSS scale:", lambda: self.sss.setValue(DEFAULT_SSS_SCALE),
+                                    [self.sss], "%g" % DEFAULT_SSS_SCALE), self.sss)
             self.ext = QtWidgets.QDoubleSpinBox()
             self.ext.setDecimals(3)
             self.ext.setRange(0.001, 100000)
@@ -1565,11 +1920,11 @@ if QtWidgets is not None:
                                 "Database coefficients are per cm: 1 for a scene in cm, 100 in meters.\n"
                                 "Raise it to exaggerate the tint on small objects.")
             self.ext.valueChanged.connect(lambda *_: self._on_select(self.list.currentItem()))
-            form.addRow(_ResetLabel("Extinction scale:", lambda: self.ext.setValue(1.0)), self.ext)
+            form.addRow(_ResetLabel("Extinction scale:", lambda: self.ext.setValue(1.0), [self.ext], "1"), self.ext)
             self.reduce = QtWidgets.QCheckBox("Non-directional (faster SSS / Glass Single Scatter)")
             self.reduce.setToolTip("Replace directional (forward) scattering by isotropic scattering.\n"
-                                   "Similar look, much faster; works in XPU. Applies to the database\n"
-                                   "and to MyLibrary presets:\n"
+                                   "Similar look, much faster. Applies to the database and to MyLibrary\n"
+                                   "presets:\n"
                                    " - Glass interior with g0 > 0 (blood, coffee, juices...): g0 = 0 with\n"
                                    "   reduced scattering sigma_s * (1 - g0), extinction and albedo recomputed.\n"
                                    " - Subsurface: Directionality = 0 (skin: instead of 0.8).")
@@ -1602,28 +1957,79 @@ if QtWidgets is not None:
             right.addLayout(brow)
             self.save_btn = QtWidgets.QPushButton("Save Selected to MyLibrary…")
             self.save_btn.setToolTip("Save the selected PxrSurface (or the one assigned to the selected object)\n"
-                                     "as a preset in MyLibrary (" + library_dir(create=False) + ").\n"
+                                     "as a preset in MyLibrary,\n"
+                                     "in the category picked in the MyLibrary menu.\n"
                                      "Tip: put a .jpg or .png with the same name next to the .mel\n"
                                      "to get a preview.")
             self.save_btn.clicked.connect(lambda *_: self._save_library())
-            self.delete_btn = QtWidgets.QPushButton("Delete from MyLibrary…")
-            self.delete_btn.setToolTip("Move the selected MyLibrary preset to the _trash subfolder\n"
-                                       "of the library (recoverable).")
-            self.delete_btn.setEnabled(False)
-            self.delete_btn.clicked.connect(lambda *_: self._delete_library())
+            self.update_btn = QtWidgets.QPushButton("Update Selected to MyLibrary…")
+            self.update_btn.setToolTip("Overwrite the MyLibrary preset picked in the list with the selected\n"
+                                       "PxrSurface (or the one assigned to the selected object).\n"
+                                       "Name, category and thumbnail files are kept.")
+            self.update_btn.setEnabled(False)
+            self.update_btn.clicked.connect(lambda *_: self._update_library())
             self.thumb_btn = QtWidgets.QPushButton("Render Thumbnail")
-            self.thumb_btn.setToolTip("Render the selected MyLibrary preset with the RenderMan\n"
-                                      "Preset Browser preview scene (%d px), saved next to the .mel." % THUMBNAIL_SIZE)
+            self.thumb_btn.setToolTip("Render the selected MyLibrary presets with the RenderMan\n"
+                                      "Preset Browser preview scene (%d px), saved next to the .mel.\n"
+                                      "Ctrl / Shift-click in the list to render several in a row." % THUMBNAIL_SIZE)
             self.thumb_btn.setEnabled(False)
             self.thumb_btn.clicked.connect(lambda *_: self._render_thumbnail())
             lrow = QtWidgets.QHBoxLayout()
             lrow.addWidget(self.save_btn)
-            lrow.addWidget(self.thumb_btn)
-            lrow.addWidget(self.delete_btn)
+            lrow.addWidget(self.update_btn)
             right.addLayout(lrow)
+            self.draft_cb = QtWidgets.QCheckBox("Draft quality")
+            self.draft_cb.setToolTip("Faster, noisier thumbnails: %d-%d samples, pixel variance %g\n"
+                                     "(full quality: %d-%d samples, pixel variance %g)."
+                                     % (THUMBNAIL_DRAFT_MIN_SAMPLES, THUMBNAIL_DRAFT_MAX_SAMPLES,
+                                        THUMBNAIL_DRAFT_PIXEL_VARIANCE, THUMBNAIL_MIN_SAMPLES,
+                                        THUMBNAIL_MAX_SAMPLES, THUMBNAIL_PIXEL_VARIANCE))
+            _checkbox_reset_menu(self.draft_cb, False)
+            trow = QtWidgets.QHBoxLayout()      # own row: keeps the window narrow
+            trow.addWidget(self.thumb_btn, 1)
+            trow.addWidget(self.draft_cb)
+            right.addLayout(trow)
             self.status = QtWidgets.QLabel("")
             right.addWidget(self.status)
             lay.addLayout(right, 1)
+
+        # -- Help menu --
+        def _build_menu(self):
+            bar = QtWidgets.QMenuBar(self)
+            menu = bar.addMenu("Help")
+            act = menu.addAction("User Guide")
+            act.setShortcut(QtGui.QKeySequence("F1"))
+            act.triggered.connect(lambda *_: self._show_html("%s — User Guide" % TOOL_NAME, user_guide_html(),
+                                                             (640, 620)))
+            menu.addSeparator()
+            for label, target in (("Open MyLibrary Folder", lambda: library_dir()),
+                                  ("Physically Based Website", lambda: DATABASE_URL),
+                                  ("%s on GitHub" % TOOL_NAME, lambda: HOMEPAGE)):
+                a = menu.addAction(label)
+                a.triggered.connect(lambda *_, t=target: self._open(t()))
+            menu.addSeparator()
+            a = menu.addAction("About %s" % TOOL_NAME)
+            a.triggered.connect(lambda *_: self._show_html("About %s" % TOOL_NAME, about_html(), (520, 560)))
+            return bar
+
+        @staticmethod
+        def _open(target):
+            url = QtCore.QUrl(target) if "://" in target else QtCore.QUrl.fromLocalFile(target)
+            QtGui.QDesktopServices.openUrl(url)
+
+        def _show_html(self, title, html, size):
+            dlg = QtWidgets.QDialog(self)
+            dlg.setWindowTitle(title)
+            dlg.resize(*size)
+            v = QtWidgets.QVBoxLayout(dlg)
+            text = QtWidgets.QTextBrowser()
+            text.setOpenExternalLinks(True)
+            text.setHtml(html)
+            v.addWidget(text)
+            close = QtWidgets.QPushButton("Close")
+            close.clicked.connect(dlg.accept)
+            v.addWidget(close, 0, QtCore.Qt.AlignRight)
+            dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
 
         # -- data --
         def reload(self, force):
@@ -1645,7 +2051,73 @@ if QtWidgets is not None:
             self.pb_materials = sorted(mats, key=lambda m: m.get("name", "").lower())
             self._rebuild()
 
-        def _rebuild(self, select=None):
+        @staticmethod
+        def _fill_combo(combo, items, keep=None):
+            """items: (label, data) pairs, None = separator. Keeps the entry whose data is keep."""
+            combo.blockSignals(True)
+            combo.clear()
+            for it in items:
+                if it is None:
+                    combo.insertSeparator(combo.count())
+                else:
+                    combo.addItem(it[0], it[1])
+            idx = combo.findData(keep) if keep is not None else -1
+            combo.setCurrentIndex(idx if idx >= 0 else 0)
+            combo.blockSignals(False)
+
+        def _current_libcat(self):
+            """The MyLibrary category picked in the menu, or "" (none, All or Hide)."""
+            data = self.libcat.currentData()
+            return data if data not in (None, _ALL) else ""
+
+        def _category_action(self, action):
+            title = "MyLibrary categories"
+            try:
+                if action == _NEW_CAT:
+                    name, ok = QtWidgets.QInputDialog.getText(self, title, "New category name:")
+                    if not ok or not name.strip():
+                        return
+                    folder = create_library_category(name)
+                    self._rebuild(libcat=folder)
+                    self.status.setText("Category created: %s" % folder)
+                    return
+                cat = self._current_libcat()
+                if not cat:
+                    QtWidgets.QMessageBox.information(self, title, "Pick a category in the MyLibrary menu first.")
+                    return
+                if action == _RENAME_CAT:
+                    name, ok = QtWidgets.QInputDialog.getText(self, title, "New name for '%s':" % cat, text=cat)
+                    if not ok or not name.strip():
+                        return
+                    folder = rename_library_category(cat, name)
+                    self._rebuild(libcat=folder)
+                    self.status.setText("Category renamed: %s -> %s" % (cat, folder))
+                elif action == _DELETE_CAT:
+                    n = sum(1 for m in self.library if m.get("_libcat") == cat)
+                    answer = QtWidgets.QMessageBox.question(
+                        self, title,
+                        "Delete the category '%s' and its %d preset(s)?\n\nThe folder is moved to the _trash "
+                        "subfolder of\n%s\nand can be restored from there." % (cat, n, library_dir()))
+                    if answer != QtWidgets.QMessageBox.Yes:
+                        return
+                    trash = delete_library_category(cat)
+                    print("[PB] Deleted category %s -> %s" % (cat, trash))
+                    self._rebuild(libcat=_ALL)
+                    self.status.setText("Category deleted: %s (in _trash)" % cat)
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(self, title, str(exc))
+
+        def _move_preset(self, m, libcat):
+            try:
+                path = move_to_category(m, libcat)
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(self, "Move to category", str(exc))
+                return
+            print("[PB] Moved %s -> %s" % (m["_path"], path))
+            self._rebuild(select=path)
+            self.status.setText("Moved %s to %s" % (m["name"], libcat or "No category"))
+
+        def _rebuild(self, select=None, libcat=None):
             """Merges the database and the library presets, refreshes categories and list."""
             try:
                 self.library = load_library()
@@ -1653,39 +2125,45 @@ if QtWidgets is not None:
                 self.library = []
                 print("[PB] Library unavailable: %s" % exc)
             self.materials = self.library + getattr(self, "pb_materials", [])
-            cats = sorted({c for m in self.materials for c in categories(m)} - {LIBRARY_CATEGORY})
-            current = self.cat.currentText()
-            self.cat.blockSignals(True)
-            self.cat.clear()
-            self.cat.addItems(["All categories", LIBRARY_CATEGORY] + cats)
-            if current and self.cat.findText(current) >= 0:
-                self.cat.setCurrentText(current)
-            self.cat.blockSignals(False)
+            cats = sorted({c for m in self.materials if not m.get("_library") for c in categories(m)})
+            self._fill_combo(self.cat, [("All categories", _ALL)] + [(c, c) for c in cats], self.cat.currentData())
+            libcats = library_categories()
+            self._fill_combo(self.libcat, [("All categories", _ALL)] + [(c, c) for c in libcats],
+                             libcat if libcat is not None else self.libcat.currentData())
             self._filter()
             self.status.setText("%d materials, %d in MyLibrary" % (len(self.materials) - len(self.library), len(self.library)))
-            self.status.setToolTip("MyLibrary folder: " + library_dir())
             if select:
+                wanted = select if isinstance(select, (list, tuple)) else [select]
+                first = None
                 for i in range(self.list.count()):
-                    m = self.list.item(i).data(QtCore.Qt.UserRole)
-                    if m.get("_library") and m.get("_preset") == select:
-                        self.list.setCurrentRow(i)
-                        break
+                    it = self.list.item(i)
+                    m = it.data(QtCore.Qt.UserRole)
+                    if m.get("_library") and (m.get("_path") in wanted or m.get("_preset") in wanted):
+                        if first is None:
+                            first = it
+                            self.list.setCurrentItem(it)     # also clears the previous selection
+                        else:
+                            it.setSelected(True)
 
         def _filter(self, *_):
             txt = self.search.text().lower().strip()
-            cat = self.cat.currentText()
+            pb_cat, lib_cat = self.cat.currentData(), self.libcat.currentData()
             self.list.clear()
             for m in self.materials:
                 hay = (m.get("name", "") + " " + " ".join(map(str, m.get("tags") or []))).lower()
                 if txt and txt not in hay:
                     continue
-                if self.cat.currentIndex() > 0 and cat not in categories(m):
+                if m.get("_library"):
+                    if self.hide_lib.isChecked() or (lib_cat not in (None, _ALL) and m.get("_libcat", "") != lib_cat):
+                        continue
+                elif self.hide_pb.isChecked() or (pb_cat not in (None, _ALL) and pb_cat not in categories(m)):
                     continue
                 it = QtWidgets.QListWidgetItem(m.get("name", "?"))
                 it.setData(QtCore.Qt.UserRole, m)
                 if m.get("_library"):
                     f = it.font(); f.setBold(True); it.setFont(f)
-                    it.setToolTip("MyLibrary: " + m["_path"])
+                    it.setToolTip("MyLibrary%s: %s" % (" / " + m["_libcat"] if m.get("_libcat") else "",
+                                                       os.path.basename(m["_path"])))
                 col = preset_swatch(m["_attrs"]) if m.get("_library") else pick_color(m.get("color"), self.cs.currentText())
                 if col:
                     pm = QtGui.QPixmap(14, 14)
@@ -1699,8 +2177,8 @@ if QtWidgets is not None:
                 return
             m = item.data(QtCore.Qt.UserRole)
             cs = self.cs.currentText()
-            self.delete_btn.setEnabled(bool(m.get("_library")))
             self.thumb_btn.setEnabled(bool(m.get("_library")))
+            self.update_btn.setEnabled(bool(m.get("_library")))
             if m.get("_library"):
                 self._show_preset(m)
                 return
@@ -1741,7 +2219,8 @@ if QtWidgets is not None:
             def rgb(k):
                 c = _preset_color(a, k)
                 return ", ".join("%.3g" % x for x in c) if c else "-"
-            rows = ["<b>%s</b> — %s preset" % (m["name"], LIBRARY_CATEGORY),
+            rows = ["<b>%s</b> — %s%s preset" % (m["name"], LIBRARY_CATEGORY,
+                                                  " / " + m["_libcat"] if m.get("_libcat") else ""),
                     "<span style='color:#888'>%s</span>" % m["_path"]]
             if a.get("pbMaterial"):
                 rows.append("based on: %s" % a["pbMaterial"])
@@ -1781,23 +2260,92 @@ if QtWidgets is not None:
                     return
             self.preview.setText("MyLibrary\n\nNo thumbnail yet:\nclick Render Thumbnail")
 
+        def _selected_library(self):
+            """MyLibrary presets selected in the list, in list order."""
+            items = sorted(self.list.selectedItems(), key=self.list.row)
+            return [it.data(QtCore.Qt.UserRole) for it in items if it.data(QtCore.Qt.UserRole).get("_library")]
+
         def _render_thumbnail(self, entry=None):
-            if entry is None:
+            """Renders the thumbnails of the selected MyLibrary presets, one after the other."""
+            entries = [entry] if entry else self._selected_library()
+            if not entries:
                 item = self.list.currentItem()
-                entry = item.data(QtCore.Qt.UserRole) if item else None
-            if not entry or not entry.get("_library"):
+                m = item.data(QtCore.Qt.UserRole) if item else None
+                entries = [m] if m and m.get("_library") else []
+            if not entries:
                 self.status.setText("Pick a MyLibrary preset first.")
                 return
-            self.status.setText("Rendering thumbnail: %s…" % entry["name"])
-            QtWidgets.QApplication.processEvents()
+            done, failed, n = [], [], len(entries)
+            for i, e in enumerate(entries):
+                label = "(%d/%d)" % (i + 1, n) if n > 1 else ""
+                self.status.setText("Rendering thumbnail %s: %s…" % (label, e["name"]))
+                QtWidgets.QApplication.processEvents()
+                try:
+                    path = render_library_thumbnail(e, label, draft=self.draft_cb.isChecked())
+                except RenderCancelled:
+                    self.status.setText("Thumbnails cancelled after %d of %d." % (len(done), n))
+                    break
+                except Exception as exc:
+                    import traceback
+                    traceback.print_exc()
+                    failed.append("%s (%s)" % (e["name"], exc))
+                    if n == 1:
+                        self.status.setText("Thumbnail failed: %s" % exc)
+                        break
+                    continue
+                print("[PB] Thumbnail: %s" % path)
+                done.append(e["_path"])
+            else:
+                msg = "%d thumbnail(s) rendered" % len(done)
+                if failed:
+                    msg += ", %d failed (see the Script Editor)" % len(failed)
+                    print("[PB] Thumbnails failed: " + "; ".join(failed))
+                self.status.setText(msg + ".")
+            self._rebuild(select=done or [e["_path"] for e in entries])
+
+        def _list_menu(self, pos):
+            """Right-click on a MyLibrary preset: Rename / Render Thumbnail / Delete."""
+            item = self.list.itemAt(pos)
+            m = item.data(QtCore.Qt.UserRole) if item else None
+            if not m or not m.get("_library"):
+                return
+            if not item.isSelected():
+                self.list.setCurrentItem(item)
+            else:   # keep the multi-selection; Rename / Delete act on the clicked preset
+                self.list.setCurrentItem(item, QtCore.QItemSelectionModel.NoUpdate)
+            n = len(self._selected_library())
+            menu = QtWidgets.QMenu(self.list)
+            menu.addAction("Rename...", lambda: self._rename_library())
+            menu.addAction("Render Thumbnails (%d)" % n if n > 1 else "Render Thumbnail",
+                           lambda: self._render_thumbnail())
+            move = menu.addMenu("Move to category")
+            for c in [""] + library_categories():
+                act = move.addAction(c or "No category")
+                act.setEnabled(c != m.get("_libcat", ""))
+                act.triggered.connect(lambda *_, c=c: self._move_preset(m, c))  # *_: Qt's checked flag
+            menu.addSeparator()
+            menu.addAction("Delete...", lambda: self._delete_library())
+            pt = self.list.viewport().mapToGlobal(pos)
+            menu.exec_(pt) if hasattr(menu, "exec_") else menu.exec(pt)
+
+        def _rename_library(self):
+            item = self.list.currentItem()
+            m = item.data(QtCore.Qt.UserRole) if item else None
+            if not m or not m.get("_library"):
+                self.status.setText("Pick a MyLibrary preset to rename.")
+                return
+            name, ok = QtWidgets.QInputDialog.getText(self, "Rename MyLibrary preset",
+                                                      "New name for '%s':" % m["name"], text=m["name"])
+            if not ok or not name.strip():
+                return
             try:
-                path = render_library_thumbnail(entry)
+                stem = rename_in_library(m, name)
             except Exception as exc:
-                self.status.setText("Thumbnail failed: %s" % exc)
-                raise
-            print("[PB] Thumbnail: %s" % path)
-            self._rebuild(select=entry["_preset"])
-            self.status.setText("Thumbnail rendered: %s" % entry["name"])
+                QtWidgets.QMessageBox.warning(self, "Rename MyLibrary preset", str(exc))
+                return
+            print("[PB] Renamed %s -> %s" % (m["_preset"], stem))
+            self._rebuild(select=os.path.join(os.path.dirname(m["_path"]), stem + ".mel"))
+            self.status.setText("Renamed: %s -> %s" % (m["name"], stem[len(PRESET_PREFIX):]))
 
         def _delete_library(self):
             item = self.list.currentItem()
@@ -1821,6 +2369,36 @@ if QtWidgets is not None:
             self._rebuild()
             self.status.setText("Deleted from MyLibrary: %s (in _trash)" % m["name"])
 
+        def _update_library(self):
+            item = self.list.currentItem()
+            m = item.data(QtCore.Qt.UserRole) if item else None
+            if not m or not m.get("_library"):
+                self.status.setText("Pick the MyLibrary preset to update in the list.")
+                return
+            try:
+                shader = selected_pxrsurface()
+            except Exception as exc:
+                self.status.setText("Error: %s" % exc)
+                return
+            if not shader:
+                self.status.setText("Select a PxrSurface (or an object using one) to update the preset with.")
+                return
+            short = shader.split("|")[-1]
+            answer = QtWidgets.QMessageBox.question(
+                self, "Update MyLibrary preset",
+                "Overwrite the preset '%s' with %s?" % (m["name"], short))
+            if answer != QtWidgets.QMessageBox.Yes:
+                return
+            try:
+                path = save_to_library(shader, m["name"], path=m["_path"])
+            except Exception as exc:
+                self.status.setText("Error: %s" % exc)
+                raise
+            print("[PB] Updated %s from %s" % (path, short))
+            self._rebuild(select=path)
+            self.status.setText("Updated: %s%s" % (m["name"], " (Render Thumbnail to refresh its preview)"
+                                                   if m.get("_image") else ""))
+
         def _save_library(self):
             try:
                 shader = selected_pxrsurface()
@@ -1832,25 +2410,28 @@ if QtWidgets is not None:
                 return
             short = shader.split("|")[-1]
             guess = short.replace("_PxrSurface", "").replace("PB_", "").replace("Lib_", "")
+            libcat = self._current_libcat()
+            where = "MyLibrary / " + libcat if libcat else "MyLibrary (no category)"
             name, ok = QtWidgets.QInputDialog.getText(self, "Save to MyLibrary",
-                                                      "Preset name for %s:" % short, text=guess)
+                                                      "Preset name for %s\nin %s:" % (short, where), text=guess)
             if not ok or not name.strip():
                 return
             stem = preset_file_name(name)
-            target = os.path.join(library_dir(), stem + ".mel")
+            target = os.path.join(library_dir(), libcat, stem + ".mel") if libcat else \
+                os.path.join(library_dir(), stem + ".mel")
             if os.path.isfile(target):
                 answer = QtWidgets.QMessageBox.question(self, "Save to MyLibrary",
                                                         "'%s' already exists. Overwrite it?" % stem[len(PRESET_PREFIX):])
                 if answer != QtWidgets.QMessageBox.Yes:
                     return
             try:
-                path = save_to_library(shader, name)
+                path = save_to_library(shader, name, libcat)
             except Exception as exc:
                 self.status.setText("Error: %s" % exc)
                 raise
             print("[PB] Saved %s -> %s" % (short, path))
-            self._rebuild(select=stem)
-            self.status.setText("Saved to MyLibrary: " + stem[len(PRESET_PREFIX):])
+            self._rebuild(select=path)
+            self.status.setText("Saved to %s: %s" % (where, stem[len(PRESET_PREFIX):]))
 
         def _load_image(self, m):
             name = m.get("name", "")
