@@ -779,26 +779,34 @@ def reset_to_defaults(node, log):
     """
     Resets every numeric, unlocked, unconnected attribute of the node to its
     default value. Connected attributes (textures, patterns) are left untouched.
+    The defaults are read from a fresh node of the same type, created then deleted:
+    attributeQuery(listDefault=True) returns 0 for some RenderMan attributes,
+    which would zero them.
     """
     from maya import cmds
     kept = []
-    for attr in cmds.listAttr(node, settable=True, scalar=True) or []:
-        if attr in _DG_ATTRS or "." in attr:
-            continue
-        plug = "%s.%s" % (node, attr)
-        try:
-            if cmds.getAttr(plug, type=True) not in _NUMERIC_TYPES:
+    ref = cmds.createNode(cmds.nodeType(node), name="pb_defaults_tmp#", skipSelect=True)
+    try:
+        for attr in cmds.listAttr(node, settable=True, scalar=True) or []:
+            if attr in _DG_ATTRS or "." in attr:
                 continue
-            if cmds.getAttr(plug, lock=True):
+            plug = "%s.%s" % (node, attr)
+            try:
+                if cmds.getAttr(plug, type=True) not in _NUMERIC_TYPES:
+                    continue
+                if cmds.getAttr(plug, lock=True):
+                    continue
+                if cmds.listConnections(plug, s=True, d=False):
+                    kept.append(attr)
+                    continue
+                default = cmds.getAttr("%s.%s" % (ref, attr))
+                if cmds.getAttr(plug) != default:
+                    cmds.setAttr(plug, default)
+            except Exception:
                 continue
-            if cmds.listConnections(plug, s=True, d=False):
-                kept.append(attr)
-                continue
-            default = cmds.attributeQuery(attr, node=node, listDefault=True)
-            if default:
-                cmds.setAttr(plug, default[0])
-        except Exception:
-            continue
+    finally:
+        if cmds.objExists(ref):
+            cmds.delete(ref)
     # a connected color also has connected children: report the parent only once
     if kept:
         log.append("  (kept, connected) " + ", ".join(sorted(set(kept))))
