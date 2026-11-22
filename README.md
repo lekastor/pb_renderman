@@ -28,6 +28,7 @@ Author: **Julien Duval** · Version **1.1.0** · License **MIT**
        pb_renderman.py
        README.txt
        pb_renderman.png, pb_renderman_150.png, pb_renderman_200.png, pb_renderman.svg   (icon)
+       presets/   (shared presets, copied into MyLibrary at launch)
    ```
 2. Create the shelf button (once), in the Script Editor (Python tab):
    ```python
@@ -59,10 +60,19 @@ The **MyLibrary** category lists your own PxrSurface presets, stored in their ow
 - **Save Selected to MyLibrary…** saves the selected PxrSurface (or the one assigned to the selected object) as a new preset. The files use Maya's attribute-preset format (`.mel`), so you can also copy one into Maya's own preset folder if you want it in the Attribute Editor's *Presets* menu.
 - **Update Selected to MyLibrary…** overwrites the preset picked in the list with the selected PxrSurface, keeping its name, category and thumbnail file (render the thumbnail again to refresh it).
 - **Categories**: the *New Category*, *Rename Category* and *Delete Category* buttons under the list manage them (Rename and Delete act on the category picked in the MyLibrary menu). A category is a subfolder of the library; deleting one moves it, with its presets, to `_trash`. New presets are saved in the category picked in the menu.
-- **Right-click a MyLibrary preset** in the list: Rename…, Render Thumbnail, Move to category or Delete…. Renaming and moving also take its preview image.
+- **Right-click a MyLibrary preset** in the list: Rename…, Render Thumbnail, Move to category or Delete…. Render Thumbnail and Move to category act on all the selected presets (Ctrl / Shift-click), and Move to category can create a new category on the way. Renaming and moving also take the preview images.
 - **Delete…** (right-click) moves the preset (and its preview image) to the `_trash` subfolder of the library, so it can be restored.
 - **Render Thumbnail** renders the selected preset in RenderMan's own Preset Browser preview scene (same scene and renderer, lit by RenderMan's factory Annecy HDRI, +0.5 stop), at 256 px (the browser renders 128 px) with up to 512 samples, converted to Maya's display/view transform, and saves it next to the `.mel` as a `.png`. Ctrl / Shift-click several presets to render their thumbnails one after the other (Esc cancels). Tick *Draft quality* for faster, noisier thumbnails (4–64 samples, pixel variance 0.1). You can also use your own `.png` or `.jpg` with the same name as the `.mel`.
 - MyLibrary is available even when the database cannot be downloaded.
+
+### Shared presets
+
+The tool ships with presets by the author (reference balls, skin, glass, liquids…) in its `presets` folder, laid out like MyLibrary (category subfolders, `.mel` + `.png`). At launch they are copied into your MyLibrary:
+- a new shared preset is added, unless you already have a preset with the same name;
+- an updated shared preset replaces your copy only if you have not modified it;
+- a shared preset you deleted or modified is left alone.
+
+What was installed is tracked in `physicallybased_MyLibrary\.pb_shared_presets.json`.
 
 ### Options
 
@@ -91,7 +101,7 @@ Right-click an option (its name or its control) to reset it to its default value
 - `ssAlbedo` and `g` (the interior *g0* parameter) from the database scattering and anisotropy
 - `multiScatter` enabled whenever the single-scatter albedo is above 0
 
-**Subsurface**: `subsurfaceColor` from the color, `subsurfaceDmfp` / `subsurfaceDmfpColor` from the database radius. Skin uses a Directionality of 0.8.
+**Subsurface**: `subsurfaceColor` from the color, `subsurfaceDmfp` / `subsurfaceDmfpColor` from the database radius. Skin uses a Directionality of 0.8. Whenever subsurface is on (`subsurfaceGain` > 0, database materials and MyLibrary presets alike), *Resolve Self Intersections* is enabled.
 
 **Thin film** (soap bubble, pearl, anodized titanium): Iridescence lobe in Physical mode with the database thickness. PxrSurface has no film IOR, so its face gain is set to the film's normal-incidence reflectance `((n − 1) / (n + 1))²`.
 

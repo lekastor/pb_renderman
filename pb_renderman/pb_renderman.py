@@ -565,7 +565,7 @@ def build_pxr_values(mat, colorspace="acescg", sss_scale=DEFAULT_SSS_SCALE, roug
         "diffuseGain": 1.0, "diffuseRoughness": 0.0,
         "refractionGain": 0.0,
         "reflectionGain": 0.0,           # Glass lobe reflection off unless transmissive
-        "subsurfaceGain": 0.0, "subsurfaceDirectionality": 0.0,
+        "subsurfaceGain": 0.0, "subsurfaceDirectionality": 0.0, "subsurfaceResolveSelfIntersections": 0,
         "extinction": [0.0, 0.0, 0.0], "ssAlbedo": [0.0, 0.0, 0.0], "g": 0.0, "multiScatter": 0,
         "refractionColor": [1.0, 1.0, 1.0],
         "iridescenceFaceGain": 0.0, "iridescenceEdgeGain": 0.0,
@@ -636,11 +636,12 @@ def build_pxr_values(mat, colorspace="acescg", sss_scale=DEFAULT_SSS_SCALE, roug
         if _is_vec3(radius) and max(radius) > 0:
             mx = float(max(radius))
             v["subsurfaceGain"] = 1.0
+            v["subsurfaceResolveSelfIntersections"] = 1     # see _subsurface_rules
             v["subsurfaceColor"] = color
             v["subsurfaceDmfp"] = mx * sss_scale
             v["subsurfaceDmfpColor"] = [float(r) / mx for r in radius]
             v["diffuseGain"] = 0.0
-            notes.append("SSS: max radius %.3g mm x %.3g" % (mx, sss_scale))
+            notes.append("SSS: max radius %.3g mm x %.3g, Resolve Self Intersections ON" % (mx, sss_scale))
             g_sss = next((g for prefix, g in SSS_DIRECTIONALITY.items()
                           if mat.get("name", "").startswith(prefix)), None)
             if g_sss:
@@ -939,6 +940,75 @@ def parse_preset(path):
 _PRESET_IMAGE_EXTS = (".png", ".jpg", ".jpeg")
 
 
+SHARED_PRESETS_DIR = "presets"           # shipped presets, next to this file
+_SHARED_MANIFEST = ".pb_shared_presets.json"
+
+
+def shared_presets_dir():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), SHARED_PRESETS_DIR)
+
+
+def _file_hash(path):
+    import hashlib
+    with open(path, "rb") as f:
+        return hashlib.sha1(f.read()).hexdigest()
+
+
+def install_shared_presets():
+    """
+    Copies the presets shipped with the tool (the presets folder next to this file,
+    same layout as MyLibrary: category subfolders, .mel + preview images) into MyLibrary.
+    - a new shipped preset is copied, unless a file of the same name already exists;
+    - an updated shipped preset replaces the user's copy only if the user did not modify it;
+    - a shipped preset the user deleted or modified is left alone.
+    What was installed is tracked in MyLibrary/.pb_shared_presets.json. Returns the files copied.
+    """
+    import shutil
+    src_root = shared_presets_dir()
+    if not os.path.isdir(src_root):
+        return []
+    lib = library_dir()
+    manifest_path = os.path.join(lib, _SHARED_MANIFEST)
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    except Exception:
+        manifest = {}
+    copied, changed = [], False
+    for sub in [""] + library_categories(src_root):
+        folder = os.path.join(src_root, sub)
+        for fn in sorted(os.listdir(folder)):
+            src = os.path.join(folder, fn)
+            if not os.path.isfile(src) or not fn.lower().endswith((".mel",) + _PRESET_IMAGE_EXTS):
+                continue
+            rel = "/".join(p for p in (sub, fn) if p)
+            dest = os.path.join(lib, sub, fn)
+            new = _file_hash(src)
+            old = manifest.get(rel)
+            if old == new:
+                continue                                   # up to date, or deleted / modified by the user
+            exists = os.path.isfile(dest)
+            if not exists and old is None:
+                ok = True                                  # new shipped preset
+            elif exists and old is not None:
+                ok = _file_hash(dest) == old               # update, only if the user did not modify it
+            else:
+                ok = False                                 # user's own file of the same name, or deleted
+            if ok:
+                if not os.path.isdir(os.path.dirname(dest)):
+                    os.makedirs(os.path.dirname(dest))
+                shutil.copy2(src, dest)
+                copied.append(rel)
+            manifest[rel] = new
+            changed = True
+    if changed:
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=1, sort_keys=True)
+    if copied:
+        print("[PB] Shared presets installed in MyLibrary: " + ", ".join(copied))
+    return copied
+
+
 def library_categories(root=None):
     """MyLibrary categories: the subfolders of the library (not _trash or hidden ones)."""
     root = root or library_dir()
@@ -1109,9 +1179,17 @@ def non_directional(attrs):
     return a, notes
 
 
+def _subsurface_rules(attrs):
+    """Subsurface on (subsurfaceGain > 0) -> Resolve Self Intersections on."""
+    if float(attrs.get("subsurfaceGain", 0) or 0) > 0 and not attrs.get("subsurfaceResolveSelfIntersections"):
+        attrs = dict(attrs)
+        attrs["subsurfaceResolveSelfIntersections"] = 1
+    return attrs
+
+
 def _apply_preset(shaders, entry, log, nondirectional=False):
     from maya import cmds
-    attrs = entry["_attrs"]
+    attrs = _subsurface_rules(entry["_attrs"])
     if nondirectional:
         attrs, notes = non_directional(attrs)
         log.extend("  " + n for n in notes)
@@ -1538,6 +1616,8 @@ def save_to_library(shader, name, libcat="", path=None):
                 lines.append('blendAttrStr "%s" "%s"; ' % (attr, val.replace("\\", "\\\\").replace('"', '\\"')))
             elif kind in _NUMERIC_TYPES:
                 val = cmds.getAttr(plug)
+                if attr == "subsurfaceResolveSelfIntersections" and cmds.getAttr(shader + ".subsurfaceGain") > 0:
+                    val = 1                                   # see _subsurface_rules
                 lines.append('blendAttr "%s" %s; ' % (attr, ("%.10g" % val) if isinstance(val, float) else int(val)))
         except Exception:
             continue
@@ -1642,11 +1722,14 @@ selected object) as a preset, in the category picked in the MyLibrary menu.</li>
 PxrSurface. Name, category and thumbnail files are kept.</li>
 <li><b>New / Rename / Delete Category</b>: a category is a subfolder of the library. Rename and
 Delete act on the category picked in the MyLibrary menu.</li>
-<li><b>Right-click a preset</b>: Rename…, Render Thumbnail, Move to category, Delete….</li>
+<li><b>Right-click a preset</b>: Rename…, Render Thumbnail, Move to category, Delete…. Render Thumbnail and
+Move to category act on all the selected presets (Ctrl / Shift-click); Move to category can also create a new one.</li>
 <li><b>Render Thumbnail</b>: render the selected presets with the RenderMan Preset Browser
 preview scene (%(thumb)d px), saved next to the .mel. Ctrl / Shift-click in the list to render
 several in a row; Esc cancels. <b>Draft quality</b>: faster, noisier thumbnails. Your own .png or .jpg with the preset's name also works.</li>
 <li>Deleted presets and categories go to the <code>_trash</code> subfolder and can be restored.</li>
+<li><b>Shared presets</b>: the presets shipped in the tool's <code>presets</code> folder are copied into
+MyLibrary at launch. Your changes are never overwritten, and a shared preset you delete does not come back.</li>
 </ul>
 
 <h3>Tips and limitations</h3>
@@ -1796,6 +1879,10 @@ if QtWidgets is not None:
             _cache_path()  # resolved on the main thread
             self._build()
             self.pb_materials = []
+            try:
+                install_shared_presets()
+            except Exception as exc:
+                print("[PB] Shared presets not installed: %s" % exc)
             self._rebuild()          # library presets show at once, even offline
             self.reload(False)
 
@@ -2107,15 +2194,35 @@ if QtWidgets is not None:
             except Exception as exc:
                 QtWidgets.QMessageBox.warning(self, title, str(exc))
 
-        def _move_preset(self, m, libcat):
+        def _move_presets(self, entries, libcat):
+            """Moves presets (and their preview images) to a category ("" = none)."""
+            moved, errors = [], []
+            for m in entries:
+                try:
+                    path = move_to_category(m, libcat)
+                except Exception as exc:
+                    errors.append(str(exc))
+                    continue
+                if path != m["_path"]:
+                    print("[PB] Moved %s -> %s" % (m["_path"], path))
+                moved.append(path)
+            self._rebuild(select=moved)
+            where = libcat or "No category"
+            self.status.setText("%d preset(s) moved to %s" % (len(moved), where) if len(entries) > 1
+                                else "Moved %s to %s" % (entries[0]["name"], where))
+            if errors:
+                QtWidgets.QMessageBox.warning(self, "Move to category", "\n".join(errors))
+
+        def _move_to_new_category(self, entries):
+            name, ok = QtWidgets.QInputDialog.getText(self, "Move to category", "New category name:")
+            if not ok or not name.strip():
+                return
             try:
-                path = move_to_category(m, libcat)
+                folder = create_library_category(name)
             except Exception as exc:
                 QtWidgets.QMessageBox.warning(self, "Move to category", str(exc))
                 return
-            print("[PB] Moved %s -> %s" % (m["_path"], path))
-            self._rebuild(select=path)
-            self.status.setText("Moved %s to %s" % (m["name"], libcat or "No category"))
+            self._move_presets(entries, folder)
 
         def _rebuild(self, select=None, libcat=None):
             """Merges the database and the library presets, refreshes categories and list."""
@@ -2318,11 +2425,15 @@ if QtWidgets is not None:
             menu.addAction("Rename...", lambda: self._rename_library())
             menu.addAction("Render Thumbnails (%d)" % n if n > 1 else "Render Thumbnail",
                            lambda: self._render_thumbnail())
-            move = menu.addMenu("Move to category")
+            # Move acts on every selected preset (or the clicked one)
+            targets = self._selected_library() or [m]
+            move = menu.addMenu("Move to category" + (" (%d)" % len(targets) if len(targets) > 1 else ""))
             for c in [""] + library_categories():
                 act = move.addAction(c or "No category")
-                act.setEnabled(c != m.get("_libcat", ""))
-                act.triggered.connect(lambda *_, c=c: self._move_preset(m, c))  # *_: Qt's checked flag
+                act.setEnabled(any(t.get("_libcat", "") != c for t in targets))
+                act.triggered.connect(lambda *_, c=c: self._move_presets(targets, c))  # *_: Qt's checked flag
+            move.addSeparator()
+            move.addAction("New category…").triggered.connect(lambda *_: self._move_to_new_category(targets))
             menu.addSeparator()
             menu.addAction("Delete...", lambda: self._delete_library())
             pt = self.list.viewport().mapToGlobal(pos)

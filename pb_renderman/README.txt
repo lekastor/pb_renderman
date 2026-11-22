@@ -36,6 +36,7 @@ INSTALLATION
          README.txt
          pb_renderman.png, pb_renderman_150.png,
          pb_renderman_200.png, pb_renderman.svg      (icon)
+         presets\     (shared presets, copied into MyLibrary at launch)
 
 2. Create the shelf button (once). In the Script Editor (Python tab),
    paste these two lines exactly as they are, without leading spaces
@@ -104,8 +105,10 @@ folders:
   subfolder of the library; deleting one moves it, with its presets, to
   _trash. New presets are saved in the category picked in the menu.
 - Right-click a MyLibrary preset in the list: Rename..., Render Thumbnail,
-  Move to category or Delete.... Renaming and moving also take its preview
-  image.
+  Move to category or Delete.... Render Thumbnail and Move to category act
+  on all the selected presets (Ctrl / Shift-click), and Move to category
+  can create a new category on the way. Renaming and moving also take the
+  preview images.
 - "Delete..." (right-click) moves the preset (and its preview image) to
   the _trash subfolder of the library, so it can be restored.
 - "Render Thumbnail" renders the selected preset in RenderMan's own
@@ -118,6 +121,18 @@ folders:
   samples, pixel variance 0.1). You can also use
   your own .png or .jpg with the same name as the .mel.
 - MyLibrary is available even when the database cannot be downloaded.
+
+SHARED PRESETS
+--------------
+The tool ships with presets by the author (reference balls, skin, glass,
+liquids...) in its presets folder, laid out like MyLibrary (category
+subfolders, .mel + .png). At launch they are copied into your MyLibrary:
+- a new shared preset is added, unless you already have a preset with the
+  same name;
+- an updated shared preset replaces your copy only if you have not
+  modified it;
+- a shared preset you deleted or modified is left alone.
+What was installed is tracked in physicallybased_MyLibrary\.pb_shared_presets.json.
 
 
 OPTIONS
@@ -181,7 +196,9 @@ Transmissive materials (glass, water, liquids, plastics, gems)
 
 Subsurface
   subsurfaceColor from the color, subsurfaceDmfp / subsurfaceDmfpColor
-  from the database radius. Skin uses a Directionality of 0.8.
+  from the database radius. Skin uses a Directionality of 0.8. Whenever
+  subsurface is on (subsurfaceGain > 0, database materials and MyLibrary
+  presets alike), Resolve Self Intersections is enabled.
 
 Thin film (soap bubble, pearl, anodized titanium)
   Iridescence lobe in Physical mode with the database thickness.
