@@ -105,8 +105,10 @@ folders:
   subfolder of the library; deleting one moves it, with its presets, to
   _trash. New presets are saved in the category picked in the menu.
 - Right-click a MyLibrary preset in the list: Rename..., Render Thumbnail,
-  Move to category or Delete.... Renaming and moving also take its preview
-  image.
+  Move to category or Delete.... Render Thumbnail and Move to category act
+  on all the selected presets (Ctrl / Shift-click), and Move to category
+  can create a new category on the way. Renaming and moving also take the
+  preview images.
 - "Delete..." (right-click) moves the preset (and its preview image) to
   the _trash subfolder of the library, so it can be restored.
 - "Render Thumbnail" renders the selected preset in RenderMan's own

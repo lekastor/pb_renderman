@@ -1722,7 +1722,8 @@ selected object) as a preset, in the category picked in the MyLibrary menu.</li>
 PxrSurface. Name, category and thumbnail files are kept.</li>
 <li><b>New / Rename / Delete Category</b>: a category is a subfolder of the library. Rename and
 Delete act on the category picked in the MyLibrary menu.</li>
-<li><b>Right-click a preset</b>: Rename…, Render Thumbnail, Move to category, Delete….</li>
+<li><b>Right-click a preset</b>: Rename…, Render Thumbnail, Move to category, Delete…. Render Thumbnail and
+Move to category act on all the selected presets (Ctrl / Shift-click); Move to category can also create a new one.</li>
 <li><b>Render Thumbnail</b>: render the selected presets with the RenderMan Preset Browser
 preview scene (%(thumb)d px), saved next to the .mel. Ctrl / Shift-click in the list to render
 several in a row; Esc cancels. <b>Draft quality</b>: faster, noisier thumbnails. Your own .png or .jpg with the preset's name also works.</li>
@@ -2193,15 +2194,35 @@ if QtWidgets is not None:
             except Exception as exc:
                 QtWidgets.QMessageBox.warning(self, title, str(exc))
 
-        def _move_preset(self, m, libcat):
+        def _move_presets(self, entries, libcat):
+            """Moves presets (and their preview images) to a category ("" = none)."""
+            moved, errors = [], []
+            for m in entries:
+                try:
+                    path = move_to_category(m, libcat)
+                except Exception as exc:
+                    errors.append(str(exc))
+                    continue
+                if path != m["_path"]:
+                    print("[PB] Moved %s -> %s" % (m["_path"], path))
+                moved.append(path)
+            self._rebuild(select=moved)
+            where = libcat or "No category"
+            self.status.setText("%d preset(s) moved to %s" % (len(moved), where) if len(entries) > 1
+                                else "Moved %s to %s" % (entries[0]["name"], where))
+            if errors:
+                QtWidgets.QMessageBox.warning(self, "Move to category", "\n".join(errors))
+
+        def _move_to_new_category(self, entries):
+            name, ok = QtWidgets.QInputDialog.getText(self, "Move to category", "New category name:")
+            if not ok or not name.strip():
+                return
             try:
-                path = move_to_category(m, libcat)
+                folder = create_library_category(name)
             except Exception as exc:
                 QtWidgets.QMessageBox.warning(self, "Move to category", str(exc))
                 return
-            print("[PB] Moved %s -> %s" % (m["_path"], path))
-            self._rebuild(select=path)
-            self.status.setText("Moved %s to %s" % (m["name"], libcat or "No category"))
+            self._move_presets(entries, folder)
 
         def _rebuild(self, select=None, libcat=None):
             """Merges the database and the library presets, refreshes categories and list."""
@@ -2404,11 +2425,15 @@ if QtWidgets is not None:
             menu.addAction("Rename...", lambda: self._rename_library())
             menu.addAction("Render Thumbnails (%d)" % n if n > 1 else "Render Thumbnail",
                            lambda: self._render_thumbnail())
-            move = menu.addMenu("Move to category")
+            # Move acts on every selected preset (or the clicked one)
+            targets = self._selected_library() or [m]
+            move = menu.addMenu("Move to category" + (" (%d)" % len(targets) if len(targets) > 1 else ""))
             for c in [""] + library_categories():
                 act = move.addAction(c or "No category")
-                act.setEnabled(c != m.get("_libcat", ""))
-                act.triggered.connect(lambda *_, c=c: self._move_preset(m, c))  # *_: Qt's checked flag
+                act.setEnabled(any(t.get("_libcat", "") != c for t in targets))
+                act.triggered.connect(lambda *_, c=c: self._move_presets(targets, c))  # *_: Qt's checked flag
+            move.addSeparator()
+            move.addAction("New category…").triggered.connect(lambda *_: self._move_to_new_category(targets))
             menu.addSeparator()
             menu.addAction("Delete...", lambda: self._delete_library())
             pt = self.list.viewport().mapToGlobal(pos)
