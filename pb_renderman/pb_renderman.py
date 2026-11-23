@@ -1456,6 +1456,35 @@ def _run_with_progress(cmd, title, startupinfo=None):
     return "\n".join(log)
 
 
+def rman_version():
+    """RenderMan version from RMANTREE (e.g. 'RenderManProServer-27.2' -> '27.2'), or ''."""
+    m = re.search(r"(\d+(?:\.\d+)+)", os.path.basename(os.environ.get("RMANTREE", "").rstrip("/\\")))
+    return m.group(1) if m else ""
+
+
+THUMBNAIL_TESTED_RMAN = "27.2"     # RenderMan version the Preset Browser internals were checked against
+
+
+def _rman_internals_error(exc):
+    """Clear message when RenderMan's Preset Browser internals differ from the tested version."""
+    return RuntimeError(
+        "Render Thumbnail uses RenderMan's Preset Browser internals (tested with RenderMan %s); "
+        "they seem to differ in RenderMan %s:\n%s: %s\nThe rest of the tool is not affected."
+        % (THUMBNAIL_TESTED_RMAN, rman_version() or "(unknown)", type(exc).__name__, exc))
+
+
+def _natural_key(name):
+    """'v1.10' after 'v1.9'."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
+
+
+def _rib_sub(pattern, repl, rib, what):
+    new, n = re.subn(pattern, repl, rib)
+    if not n:
+        print("[PB] Thumbnail: %s not found in the preview scene, RenderMan's default is used." % what)
+    return new
+
+
 def render_library_thumbnail(entry, label="", draft=False):
     """
     Renders a MyLibrary preset in the RenderMan Preset Browser preview scene
@@ -1469,11 +1498,14 @@ def render_library_thumbnail(entry, label="", draft=False):
     import multiprocessing
     from maya import cmds
     _ensure_renderman()
-    import rfm2.ui.assets_browser as rab
-    import rman_utils.rman_assets.lib as ral
-    from rman_utils.rman_assets.core import RmanAsset, FilePath
-    from rman_utils.rman_assets.common.external_files import Storage
-    from rman_utils.rman_assets.common.utils import app, startup_info
+    try:
+        import rfm2.ui.assets_browser as rab
+        import rman_utils.rman_assets.lib as ral
+        from rman_utils.rman_assets.core import RmanAsset, FilePath
+        from rman_utils.rman_assets.common.external_files import Storage
+        from rman_utils.rman_assets.common.utils import app, startup_info
+    except ImportError as exc:
+        raise _rman_internals_error(exc)
 
     # RenderMan's install locations come from its own environment variables,
     # so the thumbnails follow whatever RenderMan version is loaded.
@@ -1491,8 +1523,11 @@ def render_library_thumbnail(entry, label="", draft=False):
         sg = cmds.sets(renderable=True, noSurfaceShader=True, empty=True, name="pbThumb_SG")
         cmds.connectAttr(shader + ".outColor", sg + ".surfaceShader", force=True)
         _apply_preset([shader], entry, [])
-        asset = RmanAsset(assetType="nodeGraph", label=entry["name"], previewType="std",
-                          storage=Storage(Storage.k_asset, asset_path=tmpdir))
+        try:
+            asset = RmanAsset(assetType="nodeGraph", label=entry["name"], previewType="std",
+                              storage=Storage(Storage.k_asset, asset_path=tmpdir))
+        except (TypeError, AttributeError) as exc:
+            raise _rman_internals_error(exc)
         try:
             import rfm2.ui.maya_color_manager as mcm
             mgr = mcm.color_manager()
@@ -1500,7 +1535,10 @@ def render_library_thumbnail(entry, label="", draft=False):
                           "rules": mgr.conversion_rules, "aliases": mgr.aliases}
         except Exception:
             pass
-        rab.parse_node_graph([sg], asset)
+        try:
+            rab.parse_node_graph([sg], asset)
+        except (TypeError, AttributeError) as exc:
+            raise _rman_internals_error(exc)
         matdir = FilePath(tmpdir)
         asset.save(matdir.join("asset.json"))
         # Maya hands colors over as tuples, which RenderMan's RIB writer silently turns
@@ -1517,17 +1555,27 @@ def render_library_thumbnail(entry, label="", draft=False):
     try:
         # 2. the Preset Browser preview scene, in its own folder
         scene = FilePath(os.path.join(tmpdir, "scene"))
-        shutil.copytree(ral.ribPath(None).os_path(), scene.os_path())
+        try:
+            shutil.copytree(ral.ribPath(None).os_path(), scene.os_path())
+        except (TypeError, AttributeError) as exc:
+            raise _rman_internals_error(exc)
         # the scene file name carries a version (materialSample_v1.1.rib in RenderMan 27)
-        candidates = sorted(f for f in os.listdir(scene.os_path())
-                            if f.startswith("materialSample") and f.endswith(".rib"))
+        candidates = sorted((f for f in os.listdir(scene.os_path())
+                             if f.startswith("materialSample") and f.endswith(".rib")), key=_natural_key)
         if not candidates:
-            raise RuntimeError("Preview scene not found in %s" % scene.os_path())
+            raise RuntimeError("Preview scene (materialSample*.rib) not found in %s" % scene.os_path())
         ribfile = scene.join(candidates[-1])
-        ral._writeMaterialRIB(asset, matdir)
-        ral._writeConfigRIB(scene, FilePath(rmantree), FilePath(os.environ.get("RMSTREE", "")), matdir, "std")
-        ral._writeDisplayChannelRIB(asset, ribfile)
-        ral._writeDisplayFilterRIB(asset, scene)
+        try:
+            ral._writeMaterialRIB(asset, matdir)
+            ral._writeConfigRIB(scene, FilePath(rmantree), FilePath(os.environ.get("RMSTREE", "")), matdir, "std")
+            ral._writeDisplayChannelRIB(asset, ribfile)
+            ral._writeDisplayFilterRIB(asset, scene)
+        except (TypeError, AttributeError) as exc:
+            raise _rman_internals_error(exc)
+        # the light rig file the preview scene reads (m_lightrig_envMap.rib in RenderMan 27)
+        with open(ribfile.os_path(), "r") as f:
+            m = re.search(r'"([^"/\\]*lightrig[^"/\\]*\.rib)"', f.read())
+        light_file = scene.join(m.group(1) if m else "m_lightrig_envMap.rib")
         # light rig: a RenderMan factory environment map, written as the Preset Browser
         # writes its own preview rigs, then rotated
         hdris = thumbnail_hdris()
@@ -1537,36 +1585,43 @@ def render_library_thumbnail(entry, label="", draft=False):
             light_rib = rig.getRIB()
         else:
             print("[PB] HDRI '%s' not found, using the Preset Browser's." % THUMBNAIL_HDR)
-            ral._writeLightRIB(asset, scene, hdr=ral.previewHdrAsset(ral.getPreviewHdrIdx()))
-            with open(scene.join("m_lightrig_envMap.rib").os_path(), "r") as f:
+            try:
+                ral._writeLightRIB(asset, scene, hdr=ral.previewHdrAsset(ral.getPreviewHdrIdx()))
+            except (TypeError, AttributeError) as exc:
+                raise _rman_internals_error(exc)
+            with open(light_file.os_path(), "r") as f:
                 light_rib = f.read()
-        with open(scene.join("m_lightrig_envMap.rib").os_path(), "w") as f:
+        with open(light_file.os_path(), "w") as f:
             f.write(_expose_light_rib(_rotate_light_rib(light_rib, THUMBNAIL_HDR_ROTATE_Y), THUMBNAIL_DOME_EXPOSURE))
 
         # 3. higher resolution and more samples than the Preset Browser
         with open(ribfile.os_path(), "r") as f:
             rib = f.read()
-        rib = re.sub(r'("int\[2\] FormatResolution"\s*)\[\s*\d+\s+\d+\s*\]',
-                     r'\g<1>[%d %d]' % (THUMBNAIL_SIZE, THUMBNAIL_SIZE), rib)
+        rib = _rib_sub(r'("int\[2\] FormatResolution"\s*)\[\s*\d+\s+\d+\s*\]',
+                       r'\g<1>[%d %d]' % (THUMBNAIL_SIZE, THUMBNAIL_SIZE), rib, "Resolution")
         if draft:
             smin, smax, pv = THUMBNAIL_DRAFT_MIN_SAMPLES, THUMBNAIL_DRAFT_MAX_SAMPLES, THUMBNAIL_DRAFT_PIXEL_VARIANCE
         else:
             smin, smax, pv = THUMBNAIL_MIN_SAMPLES, THUMBNAIL_MAX_SAMPLES, THUMBNAIL_PIXEL_VARIANCE
-        rib = re.sub(r'("int maxsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % smax, rib)
-        rib = re.sub(r'("int minsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % smin, rib)
-        rib = re.sub(r'("float PixelVariance"\s*)\[[^\]]*\]', r'\g<1>[%g]' % pv, rib)
+        rib = _rib_sub(r'("int maxsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % smax, rib, "maxsamples")
+        rib = _rib_sub(r'("int minsamples"\s*)\[\s*\d+\s*\]', r'\g<1>[%d]' % smin, rib, "minsamples")
+        rib = _rib_sub(r'("float PixelVariance"\s*)\[[^\]]*\]', r'\g<1>[%g]' % pv, rib, "PixelVariance")
         with open(ribfile.os_path(), "w") as f:
             f.write(rib)
 
         # 4. render
         ncpu = max(1, multiprocessing.cpu_count() - 1)
+        started = time.time() - 1
         cmd = [os.path.join(rmanbin, app("prman")), "-Progress", "-t:%d" % ncpu,
                "-cwd", scene.os_path(), ribfile.os_path()]
         output = _run_with_progress(cmd, "Rendering thumbnail%s: %s" % (label and " " + label, entry["name"]),
                                     startup_info())
-        tif = os.path.join(tmpdir, "asset_100.tif")
-        if not os.path.isfile(tif):
+        # the rendered image (asset_100.tif in RenderMan 27): the newest image prman wrote
+        images = [os.path.join(d, f) for d in (tmpdir, scene.os_path()) for f in os.listdir(d)
+                  if f.lower().endswith((".tif", ".tiff", ".exr")) and os.path.getmtime(os.path.join(d, f)) >= started]
+        if not images:
             raise RuntimeError("prman did not produce an image:\n%s" % output[-1500:])
+        tif = max(images, key=os.path.getmtime)
 
         # 5. tif (rendering space) -> png (Maya's display/view transform)
         target = os.path.join(os.path.dirname(entry["_path"]), entry["_preset"] + ".png")

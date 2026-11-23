@@ -11,7 +11,7 @@ Author: **Julien Duval** · Version **1.1.0** · License **MIT**
 ## Requirements
 
 - Maya 2022 or later (Python 3, PySide2 or PySide6)
-- RenderMan for Maya 24 or later (developed and tested with 27.2)
+- RenderMan for Maya 24 or later (developed and tested with 27.2). *Render Thumbnail* uses the Preset Browser's internals, which RenderMan may change between versions: if a version breaks it, the error says so and the rest of the tool keeps working.
 - Internet access on first launch (the database is then cached for a week)
 
 ## Installation
