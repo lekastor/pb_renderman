@@ -6,7 +6,7 @@ Browse the [Physically Based](https://physicallybased.info) material database fr
 
 Author: **Julien Duval** · Version **1.1.0** · License **MIT**
 
-![The shared MyLibrary presets, rendered with RenderMan's Preset Browser scene](docs/images/mylibrary_presets.jpg)
+![The Physically Based for RenderMan window in Maya](docs/images/ui.png)
 
 ---
 
@@ -69,12 +69,14 @@ The **MyLibrary** category lists your own PxrSurface presets, stored in their ow
 
 ### Shared presets
 
-The tool ships with presets by **Julien Duval** (reference balls, plastics, ceramic, skin, glass, liquids… see the picture at the top) in its `presets` folder, laid out like MyLibrary (category subfolders, `.mel` + `.png`). At launch they are copied into your MyLibrary:
+The tool ships with presets by **Julien Duval** (reference balls, plastics, ceramic, skin, glass, liquids…) in its `presets` folder, laid out like MyLibrary (category subfolders, `.mel` + `.png`). At launch they are copied into your MyLibrary:
 - a new shared preset is added, unless you already have a preset with the same name;
 - an updated shared preset replaces your copy only if you have not modified it;
 - a shared preset you deleted or modified is left alone.
 
 What was installed is tracked in `physicallybased_MyLibrary\.pb_shared_presets.json`.
+
+![The shared MyLibrary presets, rendered with RenderMan's Preset Browser scene](docs/images/mylibrary_presets.jpg)
 
 ### Options
 
