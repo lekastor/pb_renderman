@@ -6,6 +6,10 @@ Browse the [Physically Based](https://physicallybased.info) material database fr
 
 Author: **Julien Duval** · Version **1.1.0** · License **MIT**
 
+![Stanford dragons shaded with Physically Based for RenderMan: skin, honey, blue plastic, glass, gold, soap bubbles and reference balls](docs/images/render_sample.jpg)
+
+*Dragons shaded with the tool and its shared presets, rendered in RenderMan by Julien Duval.*
+
 ![The Physically Based for RenderMan window in Maya](docs/images/ui.png)
 
 ---
